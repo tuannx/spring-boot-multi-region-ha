@@ -1,6 +1,5 @@
 package com.multiregion.config;
 
-import com.multiregion.model.HealthResponse;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,12 +7,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.stereotype.Component;
 
 import javax.sql.DataSource;
 
@@ -21,7 +17,7 @@ import javax.sql.DataSource;
  * Failover listener that monitors region health and manages
  * automatic/manual failover between primary and secondary regions.
  */
-@RestController
+@Component
 public class FailoverListener {
 
     private static final Logger log = LoggerFactory.getLogger(FailoverListener.class);
@@ -92,52 +88,11 @@ public class FailoverListener {
     }
 
     /**
-     * Force-activate failover for this region via admin endpoint.
+     * Force-activate failover — delegates to AdminController.
      */
-    @PostMapping("/admin/failover-activate")
-    public ResponseEntity<String> forceFailover() {
+    public void forceFailover() {
         activated = true;
         log.warn("*** MANUAL FAILOVER ACTIVATED for {} ***", awsRegion);
-        return ResponseEntity.ok("Failover activated for region: " + awsRegion);
-    }
-
-    /**
-     * Health check endpoint.
-     */
-    @GetMapping("/health")
-    public ResponseEntity<HealthResponse> health() {
-        boolean dbConnected = isDatabaseConnected();
-
-        return ResponseEntity.ok(new HealthResponse(
-                dbConnected ? "UP" : "DEGRADED",
-                awsRegion,
-                multiRegionConfig.getRegionRole(),
-                getWriterNode(),
-                dbConnected,
-                activated
-        ));
-    }
-
-    private boolean isDatabaseConnected() {
-        try {
-            JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-            jdbc.queryForObject("SELECT 1", Integer.class);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private String getWriterNode() {
-        try {
-            JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-            return jdbc.queryForObject(
-                    "SELECT SERVER_ID FROM pg_catalog.aurora_replica_status() WHERE SESSION_ID = 'MASTER_SESSION_ID'",
-                    String.class
-            );
-        } catch (Exception e) {
-            return "unknown";
-        }
     }
 
     public boolean isActivated() {

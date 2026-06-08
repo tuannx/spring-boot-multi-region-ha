@@ -21,9 +21,9 @@ RETURNS TABLE(
 ) AS $$
 BEGIN
   RETURN QUERY VALUES
-    ('instance-us-001', 'MASTER_SESSION_ID', 10, 0, NOW()),
-    ('instance-us-002', 'instance-us-002',    5, 8,  NOW()),
-    ('instance-eu-001', 'instance-eu-001',    8, 85, NOW());
+    ('instance-us-001'::TEXT, 'MASTER_SESSION_ID'::TEXT, 10::INTEGER, 0::INTEGER, NOW()::TIMESTAMP),
+    ('instance-us-002'::TEXT, 'instance-us-002'::TEXT,    5::INTEGER, 8::INTEGER,  NOW()::TIMESTAMP),
+    ('instance-eu-001'::TEXT, 'instance-eu-001'::TEXT,    8::INTEGER, 85::INTEGER, NOW()::TIMESTAMP);
 END;
 $$ LANGUAGE plpgsql STABLE;
 

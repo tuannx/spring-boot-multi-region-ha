@@ -13,7 +13,7 @@ services:
       POSTGRES_PASSWORD: apppass
       TZ: UTC
     ports:
-      - "5432:5432"
+      - "5442:5432"
     volumes:
       - ./docker/init/us/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - pg-us-data:/var/lib/postgresql/data
@@ -45,12 +45,6 @@ services:
       AWS_REGION: us-east-1
       REGION_ROLE: primary
       APP_PORT: 8080
-      # GDB config
-      FAILOVER_HOME_REGION: us-east-1
-      ACTIVE_HOME_FAILOVER_MODE: strict-writer
-      INACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
-      GLOBAL_CLUSTER_PATTERNS: postgres-us:5432,postgres-eu:5432
-      CLUSTER_INSTANCE_PATTERN: postgres-?:5432
     ports:
       - "8080:8080"
     depends_on:
@@ -103,14 +97,8 @@ services:
       AWS_REGION: eu-west-1
       REGION_ROLE: secondary
       APP_PORT: 8081
-      # GDB config
-      FAILOVER_HOME_REGION: eu-west-1
-      ACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
-      INACTIVE_HOME_FAILOVER_MODE: strict-writer
-      GLOBAL_CLUSTER_PATTERNS: postgres-eu:5432,postgres-us:5432
-      CLUSTER_INSTANCE_PATTERN: postgres-?:5432
     ports:
-      - "8081:8080"
+      - "8081:8081"
     depends_on:
       postgres-eu:
         condition: service_healthy
