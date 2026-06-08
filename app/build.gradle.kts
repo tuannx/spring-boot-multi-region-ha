@@ -28,6 +28,10 @@ dependencies {
     // AWS Advanced JDBC Wrapper with Global Database failover
     implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.0.1")
 
+    // Spring Retry for HA/DR failover resilience
+    implementation("org.springframework.retry:spring-retry")
+    implementation("org.springframework.boot:spring-boot-starter-aop")
+
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
