@@ -19,11 +19,14 @@ spring:
   datasource:
     hikari:
       maximum-pool-size: 10
-      minimum-idle: 2
-      connection-timeout: 5000
-      idle-timeout: 300000
-      max-lifetime: 600000
+      minimum-idle: 0
+      connection-timeout: 3000
+      validation-timeout: 2000
+      idle-timeout: 10000
+      max-lifetime: 30000
+      keepalive-time: 15000
       connection-test-query: SELECT 1
+      leak-detection-threshold: 60000
 
 # Actuator endpoints
 management:

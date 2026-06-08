@@ -83,6 +83,14 @@ public class FailoverListener {
             log.warn("Primary region appears unreachable: {}", e.getMessage());
             log.warn("Auto-activating this region as failover target!");
             activated = true;
+            // Toggle local DB from read-only to read-write via trigger control
+            try {
+                JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+                jdbc.execute("SELECT pg_catalog.set_writer_mode(true)");
+                log.info("Local database toggled to READ-WRITE mode (triggers enabled)");
+            } catch (Exception ex) {
+                log.warn("Could not toggle DB mode: {}", ex.getMessage());
+            }
             log.info("*** FAILOVER ACTIVATED - {} is now handling requests ***", awsRegion);
         }
     }
@@ -91,8 +99,16 @@ public class FailoverListener {
      * Force-activate failover — delegates to AdminController.
      */
     public void forceFailover() {
-        activated = true;
         log.warn("*** MANUAL FAILOVER ACTIVATED for {} ***", awsRegion);
+        activated = true;
+        // Toggle local DB from read-only to read-write
+        try {
+            JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+            jdbc.execute("SELECT pg_catalog.set_writer_mode(true)");
+            log.info("Local database toggled to READ-WRITE mode (triggers enabled)");
+        } catch (Exception e) {
+            log.warn("Could not toggle DB mode: {}", e.getMessage());
+        }
     }
 
     public boolean isActivated() {

@@ -3,37 +3,21 @@ package com.multiregion.config;
 import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
 import org.springframework.context.annotation.Primary;
 
 import javax.sql.DataSource;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
-/**
- * DataSource configuration.
- * <p>
- * For local Docker: uses plain PostgreSQL driver (the AWS JDBC Wrapper's
- * topology system requires real RDS host patterns).
- * <p>
- * For production AWS deployment: uncomment the AwsJdbcWrapper bean
- * to enable GDB failover with globalClusterInstanceHostPatterns.
- */
 @Configuration
 public class DataSourceConfig {
 
     private static final Logger log = LoggerFactory.getLogger(DataSourceConfig.class);
-
-    @Value("${DB_HOST:localhost}")
-    private String dbHost;
-
-    @Value("${DB_PORT:5432}")
-    private int dbPort;
-
-    @Value("${DB_NAME:appdb}")
-    private String dbName;
 
     @Value("${DB_USER:appuser}")
     private String dbUser;
@@ -44,57 +28,77 @@ public class DataSourceConfig {
     @Value("${AWS_REGION:us-east-1}")
     private String awsRegion;
 
+    @Value("${REGION_ROLE:primary}")
+    private String regionRole;
+
     @Bean
-    @Primary
-    public DataSource dataSource() {
-        String url = String.format("jdbc:postgresql://%s:%d/%s", dbHost, dbPort, dbName);
-
-        HikariDataSource ds = new HikariDataSource();
-        ds.setJdbcUrl(url);
-        ds.setUsername(dbUser);
-        ds.setPassword(dbPass);
-        ds.setPoolName("MultiRegionPool");
-        ds.setConnectionTestQuery("SELECT 1");
-        ds.setMaximumPoolSize(10);
-        ds.setMinimumIdle(2);
-        ds.setConnectionTimeout(5000);
-        ds.setIdleTimeout(300000);
-        ds.setMaxLifetime(600000);
-
-        log.info("DataSource: url={}, region={}, pool={}", url, awsRegion, ds.getPoolName());
-        return ds;
-    }
-
-    /**
-     * Alternate DataSource for production AWS deployment with Aurora Global Database.
-     * <p>
-     * To use: switch @Primary to this bean and configure:
-     * <pre>
-     * wrapperPlugins=initialConnection,gdbFailover,efm2
-     * failoverHomeRegion=us-east-1
-     * wrapperDialect=global-aurora-pg
-     * globalClusterInstanceHostPatterns=[us-east-1]?.XXXX.us-east-1.rds.amazonaws.com,[eu-west-1]?.YYYY.eu-west-1.rds.amazonaws.com
-     * </pre>
-     */
-    // @Bean
-    // @Primary
-    // @Profile("aws")
-    public DataSource awsDataSource() {
-        String url = String.format("jdbc:aws-wrapper:postgresql://%s:%d/%s", dbHost, dbPort, dbName);
+    public DataSource writeDataSource() {
+        String url = "jdbc:aws-wrapper:postgresql://postgres-us:5432/appdb";
+        log.info("WritePool (global writer): region={} url={}", awsRegion, url);
 
         Properties props = new Properties();
         props.setProperty("user", dbUser);
         props.setProperty("password", dbPass);
-        props.setProperty("wrapperPlugins", "initialConnection,gdbFailover,efm2");
-        props.setProperty("wrapperDialect", "global-aurora-pg");
+        props.setProperty("wrapperPlugins", "failover2,dev");
+        props.setProperty("wrapperDialect", "pg");
         props.setProperty("failoverHomeRegion", awsRegion);
-        props.setProperty("activeHomeFailoverMode", "strict-writer");
-        props.setProperty("inactiveHomeFailoverMode", "home-reader-or-writer");
+        props.setProperty("clusterInstanceHostPattern", "?:5432");
+        props.setProperty("clusterTopologyRefreshRateMs", "5000");
 
         HikariDataSource ds = new HikariDataSource();
         ds.setJdbcUrl(url);
         ds.setDataSourceProperties(props);
-        ds.setPoolName("AwsAuroraPool");
+        ds.setPoolName("WritePool-" + awsRegion);
+        ds.setMaximumPoolSize(10);
+        ds.setMinimumIdle(2);
+        ds.setConnectionTimeout(5000);
+        ds.setIdleTimeout(30000);
+        ds.setMaxLifetime(60000);
+        ds.setConnectionTestQuery("SELECT 1");
         return ds;
+    }
+
+    @Bean
+    public DataSource readDataSource() {
+        boolean isSecondary = "secondary".equalsIgnoreCase(regionRole);
+        String h1 = isSecondary ? "postgres-eu" : "postgres-us";
+        log.info("ReadPool (home region): region={} host={}", awsRegion, h1);
+        String url = "jdbc:aws-wrapper:postgresql://" + h1 + ":5432/appdb";
+
+        Properties props = new Properties();
+        props.setProperty("user", dbUser);
+        props.setProperty("password", dbPass);
+        props.setProperty("wrapperPlugins", "failover2,dev");
+        props.setProperty("wrapperDialect", "pg");
+        props.setProperty("failoverHomeRegion", awsRegion);
+        props.setProperty("clusterInstanceHostPattern", "?:5432");
+        props.setProperty("clusterTopologyRefreshRateMs", "5000");
+
+        HikariDataSource ds = new HikariDataSource();
+        ds.setJdbcUrl(url);
+        ds.setDataSourceProperties(props);
+        ds.setPoolName("ReadPool-" + awsRegion);
+        ds.setMaximumPoolSize(20);
+        ds.setMinimumIdle(2);
+        ds.setConnectionTimeout(5000);
+        ds.setIdleTimeout(30000);
+        ds.setMaxLifetime(60000);
+        ds.setConnectionTestQuery("SELECT 1");
+        ds.setReadOnly(true);
+        return ds;
+    }
+
+    @Bean
+    @Primary
+    public DataSource routingDataSource(
+            @Qualifier("writeDataSource") DataSource writeDataSource,
+            @Qualifier("readDataSource") DataSource readDataSource) {
+        Map<Object, Object> targetSources = new HashMap<>();
+        targetSources.put("writer", writeDataSource);
+        targetSources.put("reader", readDataSource);
+        RoutingDataSource routing = new RoutingDataSource();
+        routing.setDefaultTargetDataSource(writeDataSource);
+        routing.setTargetDataSources(targetSources);
+        return routing;
     }
 }

@@ -1,5 +1,6 @@
 package com.multiregion.controller;
 
+import com.multiregion.config.ReadOnlyProductRepository;
 import com.multiregion.model.Product;
 import com.multiregion.service.ProductService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,9 +10,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * REST controller for CRUD operations on products.
- */
 @RestController
 @RequestMapping("/api/products")
 public class ProductController {
@@ -19,9 +17,13 @@ public class ProductController {
     @Autowired
     private ProductService productService;
 
+    @Autowired
+    private ReadOnlyProductRepository readOnlyRepo;
+
     @GetMapping
     public ResponseEntity<List<Product>> getAllProducts() {
-        return ResponseEntity.ok(productService.findAll());
+        // Reads from ReadPool (reader replica in other region)
+        return ResponseEntity.ok(readOnlyRepo.findAll());
     }
 
     @GetMapping("/{id}")

@@ -4,7 +4,7 @@
 -- Giả lập: trả về instance ID hiện tại
 CREATE OR REPLACE FUNCTION pg_catalog.aurora_db_instance_identifier()
 RETURNS TEXT AS $$
-  SELECT 'instance-us-001'::TEXT
+  SELECT 'postgres-us'::TEXT
 $$ LANGUAGE SQL IMMUTABLE;
 
 -- Schema match với query của AWS JDBC Driver:
@@ -21,9 +21,8 @@ RETURNS TABLE(
 ) AS $$
 BEGIN
   RETURN QUERY VALUES
-    ('instance-us-001'::TEXT, 'MASTER_SESSION_ID'::TEXT, 10::INTEGER, 0::INTEGER, NOW()::TIMESTAMP),
-    ('instance-us-002'::TEXT, 'instance-us-002'::TEXT,    5::INTEGER, 8::INTEGER,  NOW()::TIMESTAMP),
-    ('instance-eu-001'::TEXT, 'instance-eu-001'::TEXT,    8::INTEGER, 85::INTEGER, NOW()::TIMESTAMP);
+    ('postgres-us'::TEXT, 'postgres-us.*MASTER_SESSION_ID.*10::INTEGER, 0::INTEGER, NOW()::TIMESTAMP),
+    ('postgres-eu'::TEXT, 'postgres-eu'::TEXT,          8::INTEGER, 85::INTEGER, NOW()::TIMESTAMP);
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -32,7 +31,7 @@ $$ LANGUAGE plpgsql STABLE;
 CREATE OR REPLACE FUNCTION pg_catalog.aurora_is_writer()
 RETURNS BOOLEAN AS $$
 BEGIN
-  RETURN pg_catalog.aurora_db_instance_identifier() = 'instance-us-001';
+  RETURN pg_catalog.aurora_db_instance_identifier() = 'postgres-us';
 END;
 $$ LANGUAGE plpgsql STABLE;
 

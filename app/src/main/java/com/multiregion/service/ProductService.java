@@ -1,5 +1,6 @@
 package com.multiregion.service;
 
+import com.multiregion.config.RoutingDataSource;
 import com.multiregion.model.Product;
 import com.multiregion.repository.ProductRepository;
 import org.slf4j.Logger;
@@ -28,27 +29,55 @@ public class ProductService {
     @Value("${AWS_REGION:us-east-1}")
     private String awsRegion;
 
+    @Transactional(readOnly = true)
     public List<Product> findAll() {
-        return productRepository.findAll();
+        RoutingDataSource.routeTo("reader");
+        try {
+            return productRepository.findAll();
+        } finally {
+            RoutingDataSource.clearRoute();
+        }
     }
 
+    @Transactional(readOnly = true)
     public Optional<Product> findById(Long id) {
-        return productRepository.findById(id);
+        RoutingDataSource.routeTo("reader");
+        try {
+            return productRepository.findById(id);
+        } finally {
+            RoutingDataSource.clearRoute();
+        }
     }
 
     public Product save(Product product) {
-        if (product.getRegion() == null || product.getRegion().isEmpty()) {
-            product.setRegion(awsRegion);
+        RoutingDataSource.routeTo("writer");
+        try {
+            if (product.getRegion() == null || product.getRegion().isEmpty()) {
+                product.setRegion(awsRegion);
+            }
+            log.debug("Saving product: {} in region {}", product.getName(), product.getRegion());
+            return productRepository.save(product);
+        } finally {
+            RoutingDataSource.clearRoute();
         }
-        log.debug("Saving product: {} in region {}", product.getName(), product.getRegion());
-        return productRepository.save(product);
     }
 
     public void deleteById(Long id) {
-        productRepository.deleteById(id);
+        RoutingDataSource.routeTo("writer");
+        try {
+            productRepository.deleteById(id);
+        } finally {
+            RoutingDataSource.clearRoute();
+        }
     }
 
+    @Transactional(readOnly = true)
     public List<Product> findByRegion(String region) {
-        return productRepository.findByRegion(region);
+        RoutingDataSource.routeTo("reader");
+        try {
+            return productRepository.findByRegion(region);
+        } finally {
+            RoutingDataSource.clearRoute();
+        }
     }
 }

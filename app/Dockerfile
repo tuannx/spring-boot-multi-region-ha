@@ -3,7 +3,7 @@ FROM gradle:8-jdk17 AS builder
 WORKDIR /app
 COPY build.gradle.kts settings.gradle.kts ./
 COPY src src/
-RUN gradle build --no-daemon -x test --stacktrace 2>&1
+RUN gradle clean build --no-daemon -x test --stacktrace 2>&1
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app
