@@ -1,0 +1,142 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # REGION 1: us-east-1 (Primary Writer)
+  # ============================================
+  postgres-us:
+    image: postgres:16
+    container_name: multiregion-us
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/init/us/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - pg-us-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      multiregion-net:
+        aliases:
+          - postgres-us.local
+
+  app-us:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        SPRING_PROFILES_ACTIVE: region-us
+    image: multiregion-app:latest
+    container_name: multiregion-app-us
+    environment:
+      SPRING_PROFILES_ACTIVE: region-us
+      DB_HOST: postgres-us
+      DB_PORT: 5432
+      DB_NAME: appdb
+      DB_USER: appuser
+      DB_PASS: apppass
+      AWS_REGION: us-east-1
+      REGION_ROLE: primary
+      APP_PORT: 8080
+      # GDB config
+      FAILOVER_HOME_REGION: us-east-1
+      ACTIVE_HOME_FAILOVER_MODE: strict-writer
+      INACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
+      GLOBAL_CLUSTER_PATTERNS: postgres-us:5432,postgres-eu:5432
+      CLUSTER_INSTANCE_PATTERN: postgres-?:5432
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres-us:
+        condition: service_healthy
+    networks:
+      - multiregion-net
+
+  # ============================================
+  # REGION 2: eu-west-1 (Secondary / DR)
+  # ============================================
+  postgres-eu:
+    image: postgres:16
+    container_name: multiregion-eu
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+      TZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./docker/init/eu/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - pg-eu-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      multiregion-net:
+        aliases:
+          - postgres-eu.local
+
+  app-eu:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        SPRING_PROFILES_ACTIVE: region-eu
+    image: multiregion-app:latest
+    container_name: multiregion-app-eu
+    environment:
+      SPRING_PROFILES_ACTIVE: region-eu
+      DB_HOST: postgres-eu
+      DB_PORT: 5432
+      DB_NAME: appdb
+      DB_USER: appuser
+      DB_PASS: apppass
+      AWS_REGION: eu-west-1
+      REGION_ROLE: secondary
+      APP_PORT: 8081
+      # GDB config
+      FAILOVER_HOME_REGION: eu-west-1
+      ACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
+      INACTIVE_HOME_FAILOVER_MODE: strict-writer
+      GLOBAL_CLUSTER_PATTERNS: postgres-eu:5432,postgres-us:5432
+      CLUSTER_INSTANCE_PATTERN: postgres-?:5432
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres-eu:
+        condition: service_healthy
+    networks:
+      - multiregion-net
+
+  # ============================================
+  # Nginx Router (Failover Simulation)
+  # ============================================
+  nginx-router:
+    image: nginx:alpine
+    container_name: multiregion-router
+    ports:
+      - "8000:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app-us
+      - app-eu
+    networks:
+      - multiregion-net
+
+volumes:
+  pg-us-data:
+  pg-eu-data:
+
+networks:
+  multiregion-net:
+    driver: bridge

@@ -1,0 +1,11 @@
+# ============================================
+# Region: eu-west-1 (Secondary / DR Reader)
+# ============================================
+
+AWS_REGION: eu-west-1
+REGION_ROLE: secondary
+FAILOVER_HOME_REGION: eu-west-1
+ACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
+INACTIVE_HOME_FAILOVER_MODE: strict-writer
+GLOBAL_CLUSTER_PATTERNS: postgres-eu:5432,postgres-us:5432
+CLUSTER_INSTANCE_PATTERN: postgres-?:5432

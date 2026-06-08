@@ -1,0 +1,85 @@
+# ============================================
+# Java / Gradle
+# ============================================
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# ============================================
+# IDE / Editor
+# ============================================
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+*.sublime-*
+*.swp
+*.swo
+*~
+
+# ============================================
+# OS
+# ============================================
+.DS_Store
+.DS_Store?
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.lnk
+Desktop.ini
+$RECYCLE.BIN/
+
+# ============================================
+# Logs / Temp
+# ============================================
+*.log
+*.tmp
+*.temp
+logs/
+tmp/
+**/hs_err_pid*
+replay_pid*
+
+# ============================================
+# Docker
+# ============================================
+.docker/
+
+# ============================================
+# Environment
+# ============================================
+.env
+.env.local
+.env.*.local
+*.env
+
+# ============================================
+# Testing
+# ============================================
+test-results/
+test-output/
+*.test.js
+*.test.ts
+__pycache__/
+*.pyc
+
+# ============================================
+# Gradle Wrapper (keep if using wrapper)
+# ============================================
+# !gradle/wrapper/gradle-wrapper.jar
+# !gradle/wrapper/gradle-wrapper.properties

@@ -1,0 +1,11 @@
+# ============================================
+# Region: us-east-1 (Primary / Writer)
+# ============================================
+
+AWS_REGION: us-east-1
+REGION_ROLE: primary
+FAILOVER_HOME_REGION: us-east-1
+ACTIVE_HOME_FAILOVER_MODE: strict-writer
+INACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
+GLOBAL_CLUSTER_PATTERNS: postgres-us:5432,postgres-eu:5432
+CLUSTER_INSTANCE_PATTERN: postgres-?:5432

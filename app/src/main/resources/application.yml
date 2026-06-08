@@ -1,0 +1,56 @@
+# ============================================
+# Spring Boot Application Configuration
+# ============================================
+
+server:
+  port: ${APP_PORT:8080}
+
+spring:
+  application:
+    name: multiregion-app
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      idle-timeout: 300000
+      max-lifetime: 600000
+      connection-test-query: SELECT 1
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,env,metrics
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  info:
+    env:
+      enabled: true
+
+# Region configuration (defaults)
+AWS_REGION: us-east-1
+REGION_ROLE: primary
+FAILOVER_HOME_REGION: us-east-1
+ACTIVE_HOME_FAILOVER_MODE: strict-writer
+INACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
+GLOBAL_CLUSTER_PATTERNS: postgres-us:5432,postgres-eu:5432
+CLUSTER_INSTANCE_PATTERN: postgres-?:5432
+
+# Info endpoint
+info:
+  app:
+    name: Multi-Region Spring Boot
+    version: 0.0.1-SNAPSHOT
+    description: Multi-region HA application with AWS JDBC Driver failover
