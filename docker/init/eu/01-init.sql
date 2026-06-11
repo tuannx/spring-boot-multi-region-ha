@@ -52,6 +52,20 @@ CREATE TABLE IF NOT EXISTS region_events (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS queue_region_status (
+  queue_name VARCHAR(128) NOT NULL,
+  region VARCHAR(64) NOT NULL,
+  status VARCHAR(16) NOT NULL,
+  reason VARCHAR(255),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (queue_name, region)
+);
+
+INSERT INTO queue_region_status (queue_name, region, status, reason) VALUES
+  ('orders', 'us-east-1', 'UP', 'seeded by region init'),
+  ('orders', 'eu-west-1', 'UP', 'seeded by region init')
+ON CONFLICT (queue_name, region) DO NOTHING;
+
 -- Insert sample data with eu-west-1 region
 INSERT INTO products (name, price, region) VALUES
   ('Global Product A', 29.99, 'eu-west-1'),

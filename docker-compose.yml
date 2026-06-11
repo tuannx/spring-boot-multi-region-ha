@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ============================================
   # REGION 1: us-east-1 (Primary Writer)
@@ -44,11 +42,24 @@ services:
       DB_PASS: apppass
       AWS_REGION: us-east-1
       REGION_ROLE: primary
+      ACTIVE_WRITER_DB_HOST: postgres-us
+      ACTIVE_WRITER_DB_PORT: 5432
       APP_PORT: 8080
+      QUEUE_LISTENER_TYPE: rabbit
+      RABBITMQ_US_HOST: rabbitmq-us
+      RABBITMQ_US_PORT: 5672
+      RABBITMQ_EU_HOST: rabbitmq-eu
+      RABBITMQ_EU_PORT: 5672
+      RABBITMQ_USER: appuser
+      RABBITMQ_PASS: apppass
     ports:
       - "8080:8080"
     depends_on:
       postgres-us:
+        condition: service_healthy
+      rabbitmq-us:
+        condition: service_healthy
+      rabbitmq-eu:
         condition: service_healthy
     networks:
       - multiregion-net
@@ -96,12 +107,69 @@ services:
       DB_PASS: apppass
       AWS_REGION: eu-west-1
       REGION_ROLE: secondary
+      ACTIVE_WRITER_DB_HOST: postgres-us
+      ACTIVE_WRITER_DB_PORT: 5432
       APP_PORT: 8081
+      QUEUE_LISTENER_TYPE: rabbit
+      RABBITMQ_US_HOST: rabbitmq-us
+      RABBITMQ_US_PORT: 5672
+      RABBITMQ_EU_HOST: rabbitmq-eu
+      RABBITMQ_EU_PORT: 5672
+      RABBITMQ_USER: appuser
+      RABBITMQ_PASS: apppass
     ports:
       - "8081:8081"
     depends_on:
       postgres-eu:
         condition: service_healthy
+      rabbitmq-us:
+        condition: service_healthy
+      rabbitmq-eu:
+        condition: service_healthy
+    networks:
+      - multiregion-net
+
+  # ============================================
+  # REGION 1 QUEUE: RabbitMQ for us-east-1
+  # ============================================
+  rabbitmq-us:
+    image: rabbitmq:3.13-management
+    container_name: multiregion-rabbitmq-us
+    environment:
+      RABBITMQ_DEFAULT_USER: appuser
+      RABBITMQ_DEFAULT_PASS: apppass
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-us-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - multiregion-net
+
+  # ============================================
+  # REGION 2 QUEUE: RabbitMQ for eu-west-1
+  # ============================================
+  rabbitmq-eu:
+    image: rabbitmq:3.13-management
+    container_name: multiregion-rabbitmq-eu
+    environment:
+      RABBITMQ_DEFAULT_USER: appuser
+      RABBITMQ_DEFAULT_PASS: apppass
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - rabbitmq-eu-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks:
       - multiregion-net
 
@@ -124,6 +192,8 @@ services:
 volumes:
   pg-us-data:
   pg-eu-data:
+  rabbitmq-us-data:
+  rabbitmq-eu-data:
 
 networks:
   multiregion-net:

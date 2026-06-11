@@ -31,10 +31,20 @@ public class DataSourceConfig {
     @Value("${REGION_ROLE:primary}")
     private String regionRole;
 
+    @Value("${ACTIVE_WRITER_DB_HOST:postgres-us}")
+    private String activeWriterDbHost;
+
+    @Value("${ACTIVE_WRITER_DB_PORT:5432}")
+    private int activeWriterDbPort;
+
+    @Value("${DB_NAME:appdb}")
+    private String dbName;
+
     @Bean
     public DataSource writeDataSource() {
-        String url = "jdbc:aws-wrapper:postgresql://postgres-us:5432/appdb";
-        log.info("WritePool (global writer): region={} url={}", awsRegion, url);
+        String url = "jdbc:aws-wrapper:postgresql://" + activeWriterDbHost + ":" + activeWriterDbPort + "/" + dbName;
+        log.info("WritePool (active single writer): region={} activeWriterHost={} url={}",
+                awsRegion, activeWriterDbHost, url);
 
         Properties props = new Properties();
         props.setProperty("user", dbUser);
@@ -63,7 +73,7 @@ public class DataSourceConfig {
         boolean isSecondary = "secondary".equalsIgnoreCase(regionRole);
         String h1 = isSecondary ? "postgres-eu" : "postgres-us";
         log.info("ReadPool (home region): region={} host={}", awsRegion, h1);
-        String url = "jdbc:aws-wrapper:postgresql://" + h1 + ":5432/appdb";
+        String url = "jdbc:aws-wrapper:postgresql://" + h1 + ":5432/" + dbName;
 
         Properties props = new Properties();
         props.setProperty("user", dbUser);

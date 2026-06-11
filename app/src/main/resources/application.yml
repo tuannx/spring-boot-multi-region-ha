@@ -30,6 +30,9 @@ spring:
 
 # Actuator endpoints
 management:
+  health:
+    rabbit:
+      enabled: false
   endpoints:
     web:
       exposure:
@@ -50,6 +53,38 @@ ACTIVE_HOME_FAILOVER_MODE: strict-writer
 INACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
 GLOBAL_CLUSTER_PATTERNS: postgres-us:5432,postgres-eu:5432
 CLUSTER_INSTANCE_PATTERN: postgres-?:5432
+ACTIVE_WRITER_DB_HOST: ${ACTIVE_WRITER_DB_HOST:postgres-us}
+ACTIVE_WRITER_DB_PORT: ${ACTIVE_WRITER_DB_PORT:5432}
+
+# Dynamic queue listener coordination
+queues:
+  enabled: true
+  listener-type: ${QUEUE_LISTENER_TYPE:logging}
+  takeover-poll-interval-ms: ${QUEUE_TAKEOVER_POLL_INTERVAL_MS:60000}
+  takeover-max-duration-ms: ${QUEUE_TAKEOVER_MAX_DURATION_MS:1800000}
+  names:
+    - orders
+  regions:
+    - us-east-1
+    - eu-west-1
+  rabbitmq:
+    username: ${RABBITMQ_USER:appuser}
+    password: ${RABBITMQ_PASS:apppass}
+    queue-name-pattern: "%s.%s"
+    retry-queue-suffix: ".retry"
+    dlq-suffix: ".dlq"
+    retry-delay-ms: ${QUEUE_RETRY_DELAY_MS:5000}
+    visibility-timeout-ms: ${QUEUE_VISIBILITY_TIMEOUT_MS:30000}
+    recovery-interval-ms: ${QUEUE_RECOVERY_INTERVAL_MS:5000}
+    prefetch-count: ${QUEUE_PREFETCH_COUNT:1}
+    recreate-topology: ${QUEUE_RECREATE_TOPOLOGY:true}
+    brokers:
+      us-east-1:
+        host: ${RABBITMQ_US_HOST:localhost}
+        port: ${RABBITMQ_US_PORT:5672}
+      eu-west-1:
+        host: ${RABBITMQ_EU_HOST:localhost}
+        port: ${RABBITMQ_EU_PORT:5673}
 
 # Info endpoint
 info:

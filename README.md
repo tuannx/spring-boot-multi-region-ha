@@ -44,6 +44,7 @@ A Spring Boot application demonstrating multi-region high availability using the
 - **Automatic failover detection**: Secondary region detects primary outage and activates
 - **Manual failover**: Admin endpoint for forced failover activation
 - **Health monitoring**: Region-aware health checks with topology visibility
+- **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
 - **Docker Compose**: Full stack runs locally with Docker
 - **Nginx load balancing**: Weighted routing with health check fallback
 - **Region-aware config**: Profile-based configuration per region
@@ -125,6 +126,9 @@ curl -s http://localhost:8080/api/products | jq
 # List all products (via secondary read replica)
 curl -s http://localhost:8081/api/products | jq
 
+# Route through nginx to the compute region matching the request source
+curl -s -H "X-Source-Region: eu-west-1" http://localhost:8000/api/products | jq
+
 # Create a product (via primary - write)
 curl -s -X POST http://localhost:8080/api/products \
   -H "Content-Type: application/json" \
@@ -143,6 +147,17 @@ curl -s -X DELETE http://localhost:8080/api/products/3
 ```
 
 ## How Multi-Region Failover Works
+
+### Regional Execution Rules
+
+This project models warm-standby multi-region operation, not active-active writes. The default rule is to keep compute close to the source data and move ownership only during DR:
+
+1. **HTTP source region owns request compute**: Route an incoming HTTP request to the app in the same region as the request source whenever that region is healthy. The local nginx demo uses `X-Source-Region` (`us-east-1` or `eu-west-1`) for this routing and defaults to `us-east-1`.
+2. **Message source region owns message compute**: A message published to `orders.us-east-1` is consumed by the `us-east-1` app by default; a message published to `orders.eu-west-1` is consumed by the `eu-west-1` app by default.
+3. **Readers stay same-region**: Read paths should prefer the reader/data replica in the same region as the app handling the request or message.
+4. **Writer follows the sun, but remains single-writer**: Exactly one region is active writer at a time. The local demo points both apps at `ACTIVE_WRITER_DB_HOST`, which defaults to `postgres-us`; move that value only after the target region is promoted.
+5. **DR switchover enables takeover**: A brother region should only take over queues after DR state says the source region is unavailable or switched over. Queue takeover is a DR lease, not steady-state load balancing.
+6. **Takeover auto-returns after 30 minutes**: If DR state does not recover first, the takeover listener is released after `QUEUE_TAKEOVER_MAX_DURATION_MS` (`1800000` ms). Normal ownership returns to the original source region after recovery.
 
 ### The AWS Advanced JDBC Wrapper
 
@@ -261,6 +276,62 @@ curl -s http://localhost:8000/health | jq
 |--------|----------|-------------|
 | POST | `/admin/failover-activate` | Force activate failover |
 | GET | `/admin/topology` | Get Aurora cluster topology |
+| GET | `/admin/queues` | Inspect queue region status and active listener assignments |
+| POST | `/admin/queues/{queueName}/{region}/down` | Mark a regional queue down and trigger listener takeover |
+| POST | `/admin/queues/{queueName}/{region}/up` | Mark a regional queue healthy and release takeover |
+
+## Dynamic Queue Listener Coordination
+
+The queue module keeps regional queue/DR state in the `queue_region_status` table. Listener ownership is split into local startup listeners and dynamic takeover listeners:
+
+- On startup, an app only starts primary listeners for its own `AWS_REGION`.
+- The dynamic coordinator does not start any default listeners. It polls `queue_region_status` every `QUEUE_TAKEOVER_POLL_INTERVAL_MS` (`60000` ms by default).
+- `DOWN` means the source region has entered DR switchover/unavailable state for that queue, not normal load balancing.
+- If a brother region is `DOWN` while the local region is `UP`, the dynamic coordinator starts takeover listeners for every down brother queue in `queues.names`.
+- If the brother region recovers, the dynamic coordinator stops those takeover listeners and normal source-region ownership resumes.
+- If the brother region remains down, each takeover lease is automatically released after `QUEUE_TAKEOVER_MAX_DURATION_MS` (`1800000` ms, 30 minutes) and is not re-created until that queue recovers and fails again.
+
+The default listener implementation logs lifecycle events only. To attach a real broker such as SQS, RabbitMQ, or Kafka, provide a Spring bean implementing `QueueListenerContainerFactory`.
+
+Docker Compose starts one RabbitMQ broker per region:
+
+| Region | Service | AMQP | Management UI | Main queue | Retry queue | DLQ |
+|--------|---------|------|---------------|------------|-------------|-----|
+| `us-east-1` | `rabbitmq-us` | `localhost:5672` | `http://localhost:15672` | `orders.us-east-1` | `orders.us-east-1.retry` | `orders.us-east-1.dlq` |
+| `eu-west-1` | `rabbitmq-eu` | `localhost:5673` | `http://localhost:15673` | `orders.eu-west-1` | `orders.eu-west-1.retry` | `orders.eu-west-1.dlq` |
+
+Credentials are `appuser` / `apppass`. The apps use `QUEUE_LISTENER_TYPE=rabbit` inside Docker, so assignments start real RabbitMQ listener containers. Outside Docker the default is `logging`, which keeps local development lightweight.
+
+Retry/DLQ defaults:
+
+- Main queue dead-letters rejected messages to `.retry`.
+- Retry queue waits `QUEUE_RETRY_DELAY_MS` using RabbitMQ TTL, then routes back to the main queue.
+- DLQ queues are declared for terminal routing when a real consumer adds max-attempt handling.
+- `QUEUE_VISIBILITY_TIMEOUT_MS` maps to listener receive timeout for the local RabbitMQ adapter; for SQS this is where the same config maps to native visibility timeout.
+- During DR switchover, takeover is planned for every queue in `queues.names`, so adding more logical queues makes a brother region take over all down-region queues, not just `orders`.
+
+```bash
+# Inspect queue state and running listener assignments
+curl -s http://localhost:8080/admin/queues | jq
+
+# Simulate eu-west-1 DR switchover; the admin endpoint also forces an immediate reconcile for test/ops use
+curl -s -X POST "http://localhost:8080/admin/queues/orders/eu-west-1/down?reason=broker-unreachable" | jq
+
+# Recover eu-west-1 and release takeover back to source-region ownership
+curl -s -X POST "http://localhost:8080/admin/queues/orders/eu-west-1/up?reason=broker-recovered" | jq
+```
+
+Acceptance benchmark:
+
+```bash
+# Run against an already running local stack
+./scripts/queue-takeover-acceptance.sh
+
+# Or start/build the Docker stack first
+./scripts/queue-takeover-acceptance.sh --start
+```
+
+The script writes JSON and Markdown reports under `reports/queue-takeover/`, including baseline delay, takeover delay, release delay, final assignments, and an app log snapshot when Docker is available.
 
 ## Project Structure
 
@@ -325,7 +396,13 @@ spring-boot-multi-region-ha/
 | `INACTIVE_HOME_FAILOVER_MODE` | `home-reader-or-writer` | Failover mode when home inactive |
 | `GLOBAL_CLUSTER_PATTERNS` | — | Comma-separated host:port for all cluster nodes |
 | `CLUSTER_INSTANCE_PATTERN` | — | Wildcard pattern for topology |
+| `ACTIVE_WRITER_DB_HOST` | `postgres-us` | Active single-writer database host |
+| `ACTIVE_WRITER_DB_PORT` | `5432` | Active single-writer database port |
 | `APP_PORT` | `8080` | Application HTTP port |
+| `QUEUE_TAKEOVER_POLL_INTERVAL_MS` | `60000` | Dynamic takeover reconciliation interval |
+| `QUEUE_TAKEOVER_MAX_DURATION_MS` | `1800000` | Maximum takeover lease duration before auto-release |
+| `QUEUE_RETRY_DELAY_MS` | `5000` | RabbitMQ retry queue delay before routing back to main queue |
+| `QUEUE_VISIBILITY_TIMEOUT_MS` | `30000` | Listener receive timeout; maps to native visibility timeout for SQS-style adapters |
 
 ### Spring Profiles
 
@@ -383,6 +460,8 @@ java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
 
 ## Related Resources
 
+- [RPO Failure Modes Reference](docs/rpo-failure-modes-reference.md) — 13 warm-standby, active-active, and cross-cutting RPO failure scenarios with detection queries and Spring Boot remediation patterns
+- [Test Scenarios](docs/test-scenarios.md) — Timeline-based failover and k6 validation scenarios for the current local stack
 - [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws-advanced-jdbc-wrapper) — The official AWS JDBC wrapper with Aurora failover support
 - [AWS Aurora Global Database](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database.html) — Multi-region Aurora architecture
 - [Spring Boot Reference](https://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/) — Official Spring Boot documentation
