@@ -1,0 +1,29 @@
+name: Arcade Architecture Analysis
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  architecture-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Run arcade-agent
+        uses: lemduc/arcade-agent/actions/analyze@v0.1.1
+        with:
+          arcade-agent-version: "0.1.1"
+          source-path: app
+          language: java
+          repo-name: spring-boot-multi-region-ha
+          primary-algorithm: pkg
+          run-secondary-analyses: "true"
+          wca-num-clusters: "4"
