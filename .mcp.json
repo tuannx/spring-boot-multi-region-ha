@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "arcade-agent": {
+      "command": "bash",
+      "args": [
+        "scripts/arcade-mcp.sh"
+      ],
+      "env": {
+        "ARCADE_AGENT_PROJECT_SOURCE": "app",
+        "ARCADE_AGENT_PROJECT_LANGUAGE": "java",
+        "ARCADE_AGENT_PROJECT_REPO_NAME": "spring-boot-multi-region-ha"
+      }
+    }
+  }
+}
