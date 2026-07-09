@@ -2,6 +2,25 @@
 
 This project uses `arcade-agent` to analyze the Java architecture under `app/`.
 
+## Architecture Improvement Baseline
+
+The hexagonal refactor was driven and verified with Arcade Agent 0.1.1 using
+the deterministic `pkg` recovery algorithm:
+
+| Metric | Before | After | Change |
+|--------|-------:|------:|-------:|
+| BalancedArchitectureScore | 0.3629 | 0.5232 | +44.2% |
+| PrincipleAlignmentScore | 0.6613 | 0.8703 | +31.6% |
+| ComponentBalance | 0.3688 | 0.5590 | +51.6% |
+| HubBalance | 0.3333 | 0.6471 | +94.2% |
+| SmellDiscipline | 0.0000 | 1.0000 | +1.0000 |
+| Architectural smells | 6 | 0 | -100% |
+
+The score improvement comes from executable boundaries, not package layout
+alone: queue application code depends only on domain and ports; Spring
+scheduling lives in the configuration adapter; JDBC and RabbitMQ implement
+outbound contracts; and ArchUnit tests reject reverse dependencies.
+
 ## GitHub Actions
 
 The workflow at `.github/workflows/arcade-agent-analysis.yml` runs on pull
@@ -62,14 +81,14 @@ The project MCP env values document the default target for agent calls:
 
 | Env | Value |
 |-----|-------|
-| `ARCADE_AGENT_PROJECT_SOURCE` | `app` |
+| `ARCADE_AGENT_PROJECT_SOURCE` | `app/src/main/java` |
 | `ARCADE_AGENT_PROJECT_LANGUAGE` | `java` |
 | `ARCADE_AGENT_PROJECT_REPO_NAME` | `spring-boot-multi-region-ha` |
 
 Useful MCP call sequence for this repository:
 
 ```text
-parse(source_path="app", language="java")
+parse(source_path="app/src/main/java", language="java")
 recover(dep_graph="<parse session_id>", algorithm="pkg")
 detect_smells(architecture="<recover session_id>", dep_graph="<parse session_id>")
 compute_metrics(architecture="<recover session_id>", dep_graph="<parse session_id>")
@@ -77,6 +96,10 @@ context_for_task(dep_graph="<parse session_id>", task="change request text")
 dependency_cone(dep_graph="<parse session_id>", target="app/src/main/java/...")
 api_surface(dep_graph="<parse session_id>", target="app/src/main/java/...")
 ```
+
+Use the production source root for MCP `parse`. Passing the project root
+directly also parses `src/test`, which changes package recovery and makes the
+result differ from the CI/self-analysis path that excludes tests.
 
 Local generated analysis files are ignored by git. If a git-tracked local
 baseline is wanted later, generate it explicitly with:

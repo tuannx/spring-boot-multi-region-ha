@@ -291,7 +291,7 @@ The queue module keeps regional queue/DR state in the `queue_region_status` tabl
 - If the brother region recovers, the dynamic coordinator stops those takeover listeners and normal source-region ownership resumes.
 - If the brother region remains down, each takeover lease is automatically released after `QUEUE_TAKEOVER_MAX_DURATION_MS` (`1800000` ms, 30 minutes) and is not re-created until that queue recovers and fails again.
 
-The default listener implementation logs lifecycle events only. To attach a real broker such as SQS, RabbitMQ, or Kafka, provide a Spring bean implementing `QueueListenerContainerFactory`.
+The default listener implementation logs lifecycle events only. To attach a real broker such as SQS, RabbitMQ, or Kafka, provide a Spring bean implementing `QueueListenerProvisioner`.
 
 Docker Compose starts one RabbitMQ broker per region:
 
@@ -336,47 +336,33 @@ The script writes JSON and Markdown reports under `reports/queue-takeover/`, inc
 ## Project Structure
 
 ```
-spring-boot-multi-region-ha/
-├── app/
-│   ├── Dockerfile                    # Multi-stage build
-│   ├── build.gradle.kts              # Spring Boot 3.4 + AWS JDBC Wrapper
-│   ├── settings.gradle.kts
-│   └── src/main/
-│       ├── java/com/multiregion/
-│       │   ├── MultiRegionApplication.java
-│       │   ├── config/
-│       │   │   ├── DataSourceConfig.java     # AWS JDBC Wrapper config
-│       │   │   ├── FailoverListener.java     # Auto/manual failover
-│       │   │   └── MultiRegionConfig.java     # Region-aware beans
-│       │   ├── controller/
-│       │   │   ├── AdminController.java       # /admin/*
-│       │   │   ├── HealthController.java      # /health
-│       │   │   └── ProductController.java     # /api/products CRUD
-│       │   ├── model/
-│       │   │   ├── HealthResponse.java        # Health DTO
-│       │   │   └── Product.java               # JPA entity
-│       │   ├── repository/
-│       │   │   └── ProductRepository.java     # Spring Data JPA
-│       │   └── service/
-│       │       └── ProductService.java        # Business logic
-│       └── resources/
-│           ├── application.yml                # Base config
-│           ├── application-region-us.yml      # us-east-1 profile
-│           └── application-region-eu.yml      # eu-west-1 profile
-├── docker/
-│   ├── init/
-│   │   ├── us/
-│   │   │   └── 01-init.sql                   # US mock Aurora functions
-│   │   └── eu/
-│   │       └── 01-init.sql                    # EU mock Aurora functions
-│   └── nginx.conf                             # Load balancer config
-├── scripts/
-│   ├── failover-test.sh                       # Automated failover test
-│   └── seed-data.sh                           # Sample data seeder
-├── docker-compose.yml                         # Multi-service orchestration
-├── .gitignore
-└── README.md
+app/src/main/java/com/multiregion/
+├── MultiRegionApplication.java
+├── platform/
+│   ├── config/          # Data sources, retry and immutable region config
+│   ├── failover/        # Database failover monitoring
+│   └── web/             # Health and topology HTTP adapters
+├── product/
+│   ├── application/     # Product use cases
+│   ├── domain/          # Product model
+│   ├── port/            # Data-routing contract
+│   ├── persistence/     # JPA/JDBC adapters
+│   └── web/             # Product HTTP adapter
+└── queue/
+    ├── domain/          # Queue state and pure takeover planning
+    ├── application/     # Listener coordination and management use cases
+    ├── port/            # Inbound and outbound contracts
+    ├── persistence/     # JDBC queue-state adapter
+    ├── rabbitmq/        # RabbitMQ listener/topology adapter
+    ├── logging/         # Lightweight local listener adapter
+    ├── web/             # Queue administration HTTP adapter
+    └── config/          # Spring wiring and scheduling adapter
 ```
+
+The queue core has no dependency on Spring, JDBC, RabbitMQ, or HTTP. ArchUnit
+tests enforce dependency flow from adapters to application/ports/domain. Arcade
+Agent continuously measures package balance and architecture drift; see
+[`docs/arcade-agent.md`](docs/arcade-agent.md).
 
 ## Configuration Reference
 
