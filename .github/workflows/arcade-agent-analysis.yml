@@ -14,11 +14,11 @@ jobs:
       actions: read
       contents: read
       issues: write
-      pull-requests: write
 
     steps:
       - name: Run arcade-agent
-        uses: lemduc/arcade-agent/actions/analyze@v0.1.1
+        # v0.1.1
+        uses: lemduc/arcade-agent/actions/analyze@3d7f6130b22050979d2d18084a63bc6a932b9789
         with:
           arcade-agent-version: "0.1.1"
           source-path: app

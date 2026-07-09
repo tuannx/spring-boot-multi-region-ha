@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "arcade-agent": {
-      "command": "/bin/bash",
+      "command": "bash",
       "args": [
         "scripts/arcade-mcp.sh"
       ],

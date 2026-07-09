@@ -9,7 +9,8 @@ requests, pushes to `main`, and manual dispatch. It uses the pinned composite
 action and Python package version `0.1.1`:
 
 ```yaml
-uses: lemduc/arcade-agent/actions/analyze@v0.1.1
+# v0.1.1
+uses: lemduc/arcade-agent/actions/analyze@3d7f6130b22050979d2d18084a63bc6a932b9789
 with:
   arcade-agent-version: "0.1.1"
   source-path: app
@@ -47,7 +48,7 @@ The project includes `.mcp.json` so MCP-aware agents can start `arcade-agent`
 from the repository root. The MCP command is:
 
 ```bash
-/bin/bash scripts/arcade-mcp.sh
+bash scripts/arcade-mcp.sh
 ```
 
 The wrapper creates `.arcade/mcp-venv/` on first use and installs the pinned MCP

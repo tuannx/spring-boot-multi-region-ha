@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+unset CDPATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3.12}"
@@ -14,4 +15,4 @@ if [ ! -x "${VENV_DIR}/bin/arcade-mcp" ]; then
 fi
 
 cd "${ROOT_DIR}"
-exec "${VENV_DIR}/bin/arcade-mcp"
+exec "${VENV_DIR}/bin/arcade-mcp" "$@"
