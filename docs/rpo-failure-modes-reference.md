@@ -1679,7 +1679,7 @@ failover:
 
 The current repository already has the foundation for failover testing:
 
-- `DataSourceConfig` creates separate `WritePool` and `ReadPool`.
+- `DatabaseConnections` creates separate `WritePool` and `ReadPool`.
 - `ProductService` retries write operations with exponential backoff.
 - `docs/test-scenarios.md` captures k6 failover behavior and measured failure rates.
 - `/admin/topology` exposes topology and lag fields from the mock Aurora function.

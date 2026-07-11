@@ -37,7 +37,7 @@ jobs:
         run: gradle -p app clean test --no-daemon
 
       - name: Run Docker end-to-end acceptance
-        run: ./scripts/e2e-acceptance.sh --start --cleanup
+        run: ./scripts/e2e-acceptance.sh --start --cleanup --verify-failover
 
       - name: Upload acceptance evidence
         if: always()

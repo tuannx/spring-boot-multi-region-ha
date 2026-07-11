@@ -5,7 +5,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
 
-A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** with Global Database (gdb) failover plugin. This project simulates a real Aurora Global Database topology using local PostgreSQL instances, complete with automatic failover detection, load balancing via nginx, and region-aware health monitoring.
+A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** `failover2` plugin. This project simulates Aurora topology and control-plane state with local PostgreSQL instances, including bounded failover detection, runtime writer routing, nginx request routing, and region-aware health monitoring.
 
 ```
                          ┌─────────────────────────────────────────────┐
@@ -40,13 +40,13 @@ A Spring Boot application demonstrating multi-region high availability using the
 ## Features
 
 - **Multi-region topology**: Simulates two AWS regions (us-east-1 and eu-west-1)
-- **AWS JDBC Wrapper**: Transparent writer/reader routing via `gdbFailover` plugin
+- **AWS JDBC Wrapper**: Failover-aware initial writer/reader pools via `failover2`
 - **Automatic failover detection**: Secondary region detects primary outage and activates
 - **Manual failover**: Admin endpoint for forced failover activation
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
 - **Docker Compose**: Full stack runs locally with Docker
-- **Nginx load balancing**: Weighted routing with health check fallback
+- **Nginx request routing**: Static source-region routing for the local demo
 - **Region-aware config**: Profile-based configuration per region
 
 ## Quick Start
@@ -92,7 +92,7 @@ curl -s http://localhost:8000/health | jq
   "status": "UP",
   "region": "us-east-1",
   "role": "primary",
-  "writerNode": "instance-us-001",
+  "writerNode": "postgres-us",
   "dbConnected": true,
   "active": true
 }
@@ -104,7 +104,7 @@ curl -s http://localhost:8000/health | jq
   "status": "UP",
   "region": "eu-west-1",
   "role": "secondary",
-  "writerNode": "instance-us-001",
+  "writerNode": "postgres-us",
   "dbConnected": true,
   "active": false
 }
@@ -155,42 +155,35 @@ This project models warm-standby multi-region operation, not active-active write
 1. **HTTP source region owns request compute**: Route an incoming HTTP request to the app in the same region as the request source whenever that region is healthy. The local nginx demo uses `X-Source-Region` (`us-east-1` or `eu-west-1`) for this routing and defaults to `us-east-1`.
 2. **Message source region owns message compute**: A message published to `orders.us-east-1` is consumed by the `us-east-1` app by default; a message published to `orders.eu-west-1` is consumed by the `eu-west-1` app by default.
 3. **Readers stay same-region**: Read paths should prefer the reader/data replica in the same region as the app handling the request or message.
-4. **Writer follows the sun, but remains single-writer**: Exactly one region is active writer at a time. The local demo points both apps at `ACTIVE_WRITER_DB_HOST`, which defaults to `postgres-us`; move that value only after the target region is promoted.
+4. **Writer follows the sun, but remains single-writer**: Exactly one database is authoritative at a time. Both apps initially use `ACTIVE_WRITER_DB_HOST=postgres-us`. After verified EU promotion, both compute regions route future writes through `FAILOVER_WRITER_DB_HOST=postgres-eu`; restart reconciliation restores the correct route from authoritative topology instead of trusting a local flag alone.
 5. **DR switchover enables takeover**: A brother region should only take over queues after DR state says the source region is unavailable or switched over. Queue takeover is a DR lease, not steady-state load balancing.
 6. **Takeover auto-returns after 30 minutes**: If DR state does not recover first, the takeover listener is released after `QUEUE_TAKEOVER_MAX_DURATION_MS` (`1800000` ms). Normal ownership returns to the original source region after recovery.
 
 ### The AWS Advanced JDBC Wrapper
 
-This project uses the [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws-advanced-jdbc-wrapper) version 4.0.1, which extends the PostgreSQL JDBC driver with Aurora-specific features:
+This project uses the [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws-advanced-jdbc-wrapper) version 4.0.1, which extends the PostgreSQL JDBC driver with Aurora-aware connection handling:
 
-1. **Topology Discovery**: The `gdbFailover` plugin queries `pg_catalog.aurora_replica_status()` to discover all cluster instances and identify the writer node.
+1. **Topology Discovery**: `pg_catalog.aurora_replica_status()` identifies the current writer and topology.
 
-2. **Global Database Awareness**: The `global-aurora-pg` dialect enables Global Database topology, understanding cluster instances across regions.
+2. **Bounded primary probe**: The failover monitor uses a small direct PostgreSQL pool rather than entering the wrapper's failover loop; connection, socket, statement, and wrapper failover timeouts are five seconds.
 
-3. **Connection Routing**: Writer connections go to `instance-us-001`; reader connections can go to any available reader.
+3. **Connection Routing**: Writer connections initially go to `postgres-us`; reader connections remain regional. Promotion changes the application's effective writer route to `postgres-eu` without rebuilding the process.
 
 4. **Failover Handling**:
-   - **EFM (Enhanced Failure Monitoring)**: Continuously monitors connection health
-   - **GDB Failover**: On writer failure, promotes a new writer based on failover mode configuration
-   - **Home Region Awareness**: Routes traffic back to the home region when it recovers
+   - Three consecutive connectivity failures trigger a promotion decision, but unfenced promotion is refused by default.
+   - Planned promotion proceeds only when authoritative topology already names the local failover target. `FAILOVER_ALLOW_UNFENCED_PROMOTION=true` is an explicit unsafe demo opt-in.
+   - Query timeout, schema, permission, and pool-exhaustion errors do not count as evidence that the primary is unreachable.
+   - Promotion is complete only after the database writer postcondition and application traffic-route postcondition both pass.
 
 ### Configuration Parameters
 
 | Parameter | Description | Example |
 |-----------|-------------|---------|
-| `wrapperPlugins` | Comma-separated plugin chain | `initialConnection,gdbFailover,efm2` |
-| `wrapperDialect` | Aurora dialect | `global-aurora-pg` |
+| `wrapperPlugins` | Comma-separated plugin chain | `failover2,dev` |
+| `wrapperDialect` | Wrapper dialect | `pg` |
 | `failoverHomeRegion` | Home region for this cluster | `us-east-1` |
-| `activeHomeFailoverMode` | Failover behavior when home is active | `strict-writer` |
-| `inactiveHomeFailoverMode` | Failover behavior when home is inactive | `home-reader-or-writer` |
-| `globalClusterInstanceHostPatterns` | Comma-separated host:port for all cluster nodes | `postgres-us:5432,postgres-eu:5432` |
-| `clusterInstanceHostPattern` | Wildcard pattern for topology discovery | `postgres-?:5432` |
-
-### Failover Modes
-
-- **`strict-writer`**: Only promotes a writer from the home region (required for Aurora Global DB)
-- **`home-reader-or-writer`**: Allows any reader in the home region to become writer
-- **`reader-or-writer`**: Any reader in any region can become writer
+| `failoverTimeoutMs` | Maximum wrapper failover loop | `5000` |
+| `clusterInstanceHostPattern` | Wildcard pattern for topology discovery | `?:5432` |
 
 ### Mock Aurora Functions
 
@@ -200,7 +193,7 @@ Since we're using standard PostgreSQL locally, the project includes mock `pg_cat
 - `aurora_replica_status()` → Returns cluster topology (writer + readers)
 - `aurora_is_writer()` → Returns whether current instance is the writer
 
-The US region's init SQL declares `instance-us-001` as writer; the EU region's init SQL declares `instance-eu-001` as reader. Both report the same topology, as they would in a real Aurora Global Database.
+The US region's init SQL identifies the local node as `postgres-us`; the EU region identifies its local node as `postgres-eu`. Before promotion both report `postgres-us` as writer and `postgres-eu` as reader. A product-table fencing trigger rejects writes whenever a local database is not in writer mode, so the Docker acceptance path proves an old writer cannot continue committing after demotion.
 
 ## Testing Failover
 
@@ -211,45 +204,43 @@ chmod +x scripts/failover-test.sh
 ./scripts/failover-test.sh
 ```
 
-This script:
-1. Checks initial health of both regions
-2. Creates a test product
-3. Kills the primary (us-east-1) database
-4. Verifies secondary detects the outage
-5. Activates failover on secondary via admin API
-6. Restarts primary and verifies recovery
+This compatibility command delegates to the canonical fenced E2E. It first
+proves that promotion is refused while US still owns authority, fences US,
+promotes EU, verifies writes from both compute regions land only in EU, checks
+queue takeover/release, restarts EU to verify reconciliation, and removes test
+volumes on completion.
 
-### Manual Failover Simulation
+### Manual Planned Switchover Simulation
 
 ```bash
 # 1. Check initial state
 curl -s http://localhost:8080/health | jq .role
 curl -s http://localhost:8081/health | jq .role
 
-# 2. Simulate primary outage
-docker stop multiregion-us
+# 2. Fence the old writer (real Aurora does this in its control plane)
+docker exec multiregion-us psql -U appuser -d appdb -c \
+  "SELECT pg_catalog.set_writer_mode(false);"
 
-# 3. Wait for failover detection (15s check interval)
-sleep 20
-
-# 4. Check secondary health
-curl -s http://localhost:8081/health | jq
-
-# 5. Manually activate failover on secondary
+# 3. Activate failover on the secondary
 curl -s -X POST http://localhost:8081/admin/failover-activate | jq
 
-# 6. Verify topology
+# 4. Verify topology and a real EU write
 curl -s http://localhost:8081/admin/topology | jq
+curl -s -X POST http://localhost:8081/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"After switchover","price":42.00}' | jq
 
-# 7. Recover primary
-docker start multiregion-us
-sleep 10
-
-# 8. Check everything is back
-curl -s http://localhost:8080/health | jq
-curl -s http://localhost:8081/health | jq
-curl -s http://localhost:8000/health | jq
+# 5. Verify the control state is exactly one writer
+docker exec multiregion-us psql -U appuser -d appdb -Atqc \
+  "SELECT pg_catalog.aurora_is_writer();" # f
+docker exec multiregion-eu psql -U appuser -d appdb -Atqc \
+  "SELECT pg_catalog.aurora_is_writer();" # t
 ```
+
+The local demo has no automatic failback. Run the acceptance command with
+`--cleanup` (the default in `configure-failover-infra.sh`) to reset state. Real
+disaster promotion still requires an external fencing/quorum decision before a
+previously unreachable primary is allowed to rejoin.
 
 ## API Reference
 
@@ -324,8 +315,8 @@ curl -s -X POST "http://localhost:8080/admin/queues/orders/eu-west-1/up?reason=b
 End-to-end acceptance:
 
 ```bash
-# Product routing plus real app/database/RabbitMQ queue takeover
-./scripts/e2e-acceptance.sh --start --cleanup
+# Product routing, verified local EU promotion, and RabbitMQ queue takeover
+./scripts/e2e-acceptance.sh --start --cleanup --verify-failover
 
 # Queue-only benchmark against an already running stack
 ./scripts/queue-takeover-acceptance.sh
@@ -346,8 +337,17 @@ snapshots when Docker is available.
 app/src/main/java/com/multiregion/
 ├── MultiRegionApplication.java
 ├── platform/
-│   ├── config/          # Data sources, retry and immutable region config
-│   ├── failover/        # Database failover monitoring
+│   ├── config/          # Retry and immutable region config
+│   ├── database/        # Physical wrapper, probe, admin and promoted-writer pools
+│   ├── routing/         # Lazy read/write selection and runtime writer switch
+│   ├── failover/
+│   │   ├── domain/      # Typed failover and topology results
+│   │   ├── application/ # Promotion orchestration and activation state
+│   │   ├── port/        # Failover control, monitoring and topology contracts
+│   │   ├── jdbc/        # Aurora topology and writer-mode adapter
+│   │   ├── routing/     # Failover port adapter for the runtime writer switch
+│   │   ├── scheduling/  # Spring lifecycle and health-check adapter
+│   │   └── config/      # Spring composition root
 │   └── web/             # Health and topology HTTP adapters
 ├── product/
 │   ├── application/     # Product use cases
@@ -366,9 +366,10 @@ app/src/main/java/com/multiregion/
     └── config/          # Spring wiring and scheduling adapter
 ```
 
-The queue core has no dependency on Spring, JDBC, RabbitMQ, or HTTP. ArchUnit
-tests enforce dependency flow from adapters to application/ports/domain. Arcade
-Agent continuously measures package balance and architecture drift; see
+The queue and failover cores have no dependency on Spring, JDBC, RabbitMQ, or
+HTTP. ArchUnit tests enforce dependency flow from adapters to
+application/ports/domain. Arcade Agent continuously measures package balance
+and architecture drift; the reproducible baseline workflow is documented in
 [`docs/arcade-agent.md`](docs/arcade-agent.md).
 
 ## Configuration Reference
@@ -391,6 +392,12 @@ Agent continuously measures package balance and architecture drift; see
 | `CLUSTER_INSTANCE_PATTERN` | — | Wildcard pattern for topology |
 | `ACTIVE_WRITER_DB_HOST` | `postgres-us` | Active single-writer database host |
 | `ACTIVE_WRITER_DB_PORT` | `5432` | Active single-writer database port |
+| `LOCAL_DB_HOST` | Region local | Direct local database host used for promotion control and local authority checks |
+| `LOCAL_DB_PORT` | `5432` | Direct local promotion-control database port |
+| `FAILOVER_WRITER_DB_HOST` | `postgres-eu` | Authoritative promoted-writer host used by both compute regions after switchover |
+| `FAILOVER_WRITER_DB_PORT` | `5432` | Promoted-writer database port |
+| `FAILOVER_FAILURE_THRESHOLD` | `3` | Consecutive primary-unreachable probes required before a promotion decision |
+| `FAILOVER_ALLOW_UNFENCED_PROMOTION` | `false` | Unsafe demo opt-in; when false, unreachable authority cannot be promoted or trusted during restart reconciliation |
 | `APP_PORT` | `8080` | Application HTTP port |
 | `QUEUE_POLL_INTERVAL_MS` | `5000` | Local listener reconciliation interval |
 | `QUEUE_TAKEOVER_POLL_INTERVAL_MS` | `60000` | Dynamic takeover reconciliation interval |
@@ -411,15 +418,30 @@ Real Aurora PostgreSQL exposes `aurora_replica_status()` and related functions n
 
 ### Failover detection strategy
 
-The `FailoverListener` uses a scheduled task (every 15 seconds) to query `aurora_replica_status()` for the writer node. If the query fails (primary is unreachable), the secondary can auto-activate. This is intentionally simplified for demonstration — production deployments would use a consensus mechanism, health check endpoints, and a proper quorum.
+The scheduling `FailoverListener` checks the primary every 15 seconds on a
+dedicated scheduler and through a bounded direct-probe port. Queue reconciliation
+uses a separate two-thread scheduler, so a database probe cannot stall queue
+ownership work. `FailoverOrchestrator` owns promotion state without holding a
+monitor lock across JDBC I/O. A secondary promotes only when authoritative
+topology names its local instance (or the explicitly unsafe opt-in is enabled),
+then verifies both the database writer postcondition and promoted traffic route.
+On restart, a stale EU writer flag is rejected if topology has returned to US.
+A demoted US compute process switches its writes to the promoted EU pool, so
+queue and product writes do not continue against the fenced database. Three
+connectivity-classified failures trigger a decision, but the safe default
+refuses promotion when authority is unreachable; schema/configuration/query
+timeouts are also reported without promotion. The same fail-closed rule applies
+when a promoted secondary restarts while authority is unreachable; operators
+who explicitly enable `FAILOVER_ALLOW_UNFENCED_PROMOTION` choose availability
+over split-brain protection for that case. Production still needs a real
+consensus/quorum, fencing token or lease, and a production promotion adapter.
 
-### Nginx load balancing
+### Nginx request routing
 
-Nginx provides weighted round-robin load balancing with:
-- Primary gets weight 100 (preferred for writes)
-- Secondary gets weight 50 (read-only traffic)
-- Failed instances are automatically removed from rotation
-- Health endpoint fallback routes to secondary if primary is down
+Nginx statically maps `X-Source-Region` to the matching compute region and
+defaults to US. The E2E verifies the post-switchover route through port 8000
+with `X-Source-Region: eu-west-1`. This is not a production traffic director;
+global ingress health/failover remains an external control-plane responsibility.
 
 ## Development
 

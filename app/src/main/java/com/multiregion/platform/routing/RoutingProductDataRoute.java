@@ -1,4 +1,4 @@
-package com.multiregion.platform.config;
+package com.multiregion.platform.routing;
 
 import com.multiregion.product.port.ProductDataRoute;
 import org.springframework.stereotype.Component;
@@ -10,17 +10,17 @@ public class RoutingProductDataRoute implements ProductDataRoute {
 
     @Override
     public <T> T read(Supplier<T> operation) {
-        return routed("reader", operation);
+        return routed(RoutingDataSource.READER, operation);
     }
 
     @Override
     public <T> T write(Supplier<T> operation) {
-        return routed("writer", operation);
+        return routed(RoutingDataSource.WRITER, operation);
     }
 
     @Override
     public void write(Runnable operation) {
-        RoutingDataSource.routeTo("writer");
+        RoutingDataSource.routeTo(RoutingDataSource.WRITER);
         try {
             operation.run();
         } finally {

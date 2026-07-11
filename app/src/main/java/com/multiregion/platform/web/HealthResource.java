@@ -1,12 +1,11 @@
 package com.multiregion.platform.web;
 
+import com.multiregion.platform.failover.port.AuroraTopologyGateway;
+import com.multiregion.platform.failover.port.FailoverControl;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import javax.sql.DataSource;
 
 /**
  * Health check controller providing region-aware status.
@@ -14,15 +13,18 @@ import javax.sql.DataSource;
 @RestController
 public class HealthResource {
 
-    private final DataSource dataSource;
+    private final AuroraTopologyGateway topologyGateway;
+    private final FailoverControl failoverControl;
     private final String awsRegion;
     private final String regionRole;
 
     public HealthResource(
-            DataSource dataSource,
+            AuroraTopologyGateway topologyGateway,
+            FailoverControl failoverControl,
             @Value("${AWS_REGION:us-east-1}") String awsRegion,
             @Value("${REGION_ROLE:primary}") String regionRole) {
-        this.dataSource = dataSource;
+        this.topologyGateway = topologyGateway;
+        this.failoverControl = failoverControl;
         this.awsRegion = awsRegion;
         this.regionRole = regionRole;
     }
@@ -30,7 +32,7 @@ public class HealthResource {
     @GetMapping("/health")
     public ResponseEntity<HealthResponse> health() {
         boolean dbConnected = isDatabaseConnected();
-        String writerNode = getWriterNode();
+        String writerNode = dbConnected ? getWriterNode() : "unknown";
         String status = dbConnected ? "UP" : "DEGRADED";
 
         return ResponseEntity.ok(new HealthResponse(
@@ -39,28 +41,18 @@ public class HealthResource {
                 regionRole,
                 writerNode,
                 dbConnected,
-                "primary".equalsIgnoreCase(regionRole)
+                failoverControl.isActivated()
         ));
     }
 
     private boolean isDatabaseConnected() {
-        try {
-            JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-            jdbc.queryForObject("SELECT 1", Integer.class);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
+        return topologyGateway.isDatabaseConnected();
     }
 
     private String getWriterNode() {
         try {
-            JdbcTemplate jdbc = new JdbcTemplate(dataSource);
-            return jdbc.queryForObject(
-                    "SELECT SERVER_ID FROM pg_catalog.aurora_replica_status() WHERE SESSION_ID = 'MASTER_SESSION_ID'",
-                    String.class
-            );
-        } catch (Exception e) {
+            return topologyGateway.currentWriter();
+        } catch (RuntimeException e) {
             return "unknown";
         }
     }

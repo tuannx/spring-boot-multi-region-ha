@@ -44,6 +44,12 @@ services:
       REGION_ROLE: primary
       ACTIVE_WRITER_DB_HOST: postgres-us
       ACTIVE_WRITER_DB_PORT: 5432
+      LOCAL_DB_HOST: postgres-us
+      LOCAL_DB_PORT: 5432
+      FAILOVER_WRITER_DB_HOST: postgres-eu
+      FAILOVER_WRITER_DB_PORT: 5432
+      FAILOVER_FAILURE_THRESHOLD: 3
+      FAILOVER_ALLOW_UNFENCED_PROMOTION: "false"
       APP_PORT: 8080
       QUEUE_LISTENER_TYPE: rabbit
       RABBITMQ_US_HOST: rabbitmq-us
@@ -109,6 +115,12 @@ services:
       REGION_ROLE: secondary
       ACTIVE_WRITER_DB_HOST: postgres-us
       ACTIVE_WRITER_DB_PORT: 5432
+      LOCAL_DB_HOST: postgres-eu
+      LOCAL_DB_PORT: 5432
+      FAILOVER_WRITER_DB_HOST: postgres-eu
+      FAILOVER_WRITER_DB_PORT: 5432
+      FAILOVER_FAILURE_THRESHOLD: 3
+      FAILOVER_ALLOW_UNFENCED_PROMOTION: "false"
       APP_PORT: 8081
       QUEUE_LISTENER_TYPE: rabbit
       RABBITMQ_US_HOST: rabbitmq-us

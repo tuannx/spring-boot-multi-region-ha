@@ -1,0 +1,588 @@
+{
+  "timestamp": "2026-07-11T03:57:46.297314+00:00",
+  "repo_name": "spring-boot-multi-region-ha",
+  "language": "java",
+  "commit_sha": "08ac92545db3673ded5c4ef965ee42398cace4f8",
+  "ref": "refs/heads/main",
+  "algorithm": "pkg",
+  "num_components": 18,
+  "num_entities": 162,
+  "num_edges": 330,
+  "source_num_entities": 162,
+  "class_count": 25,
+  "function_count": 0,
+  "method_count": 126,
+  "entity_kind_counts": {
+    "class": 25,
+    "enum": 2,
+    "interface": 9,
+    "method": 126
+  },
+  "component_dependencies": [
+    {
+      "source": "Application",
+      "target": "Domain"
+    },
+    {
+      "source": "Application",
+      "target": "Port"
+    },
+    {
+      "source": "Application2",
+      "target": "Domain2"
+    },
+    {
+      "source": "Application2",
+      "target": "Port2"
+    },
+    {
+      "source": "Config2",
+      "target": "Application2"
+    },
+    {
+      "source": "Config2",
+      "target": "Logging"
+    },
+    {
+      "source": "Config2",
+      "target": "Port2"
+    },
+    {
+      "source": "Config2",
+      "target": "Rabbitmq"
+    },
+    {
+      "source": "Logging",
+      "target": "Port2"
+    },
+    {
+      "source": "Persistence",
+      "target": "Domain"
+    },
+    {
+      "source": "Persistence",
+      "target": "Port"
+    },
+    {
+      "source": "Persistence2",
+      "target": "Domain2"
+    },
+    {
+      "source": "Persistence2",
+      "target": "Port2"
+    },
+    {
+      "source": "Port",
+      "target": "Domain"
+    },
+    {
+      "source": "Port2",
+      "target": "Domain2"
+    },
+    {
+      "source": "Rabbitmq",
+      "target": "Port2"
+    },
+    {
+      "source": "Web2",
+      "target": "Application"
+    },
+    {
+      "source": "Web2",
+      "target": "Domain"
+    },
+    {
+      "source": "Web3",
+      "target": "Domain2"
+    },
+    {
+      "source": "Web3",
+      "target": "Port2"
+    }
+  ],
+  "components": [
+    {
+      "name": "Multiregionapplication",
+      "responsibility": "Entities in MultiRegionApplication",
+      "num_entities": 1,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 1,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 1
+      },
+      "entities": [
+        "com.multiregion.MultiRegionApplication"
+      ]
+    },
+    {
+      "name": "Main",
+      "responsibility": "Entities in MultiRegionApplication.main",
+      "num_entities": 1,
+      "class_count": 0,
+      "function_count": 0,
+      "method_count": 1,
+      "entity_kind_counts": {
+        "method": 1
+      },
+      "entities": [
+        "com.multiregion.MultiRegionApplication.main"
+      ]
+    },
+    {
+      "name": "Config",
+      "responsibility": "Entities in platform.config",
+      "num_entities": 9,
+      "class_count": 3,
+      "function_count": 0,
+      "method_count": 6,
+      "entity_kind_counts": {
+        "class": 3,
+        "method": 6
+      },
+      "entities": [
+        "com.multiregion.platform.config.DataSourceConfig",
+        "com.multiregion.platform.config.DataSourceConfig.readDataSource",
+        "com.multiregion.platform.config.DataSourceConfig.routingDataSource",
+        "com.multiregion.platform.config.DataSourceConfig.writeDataSource",
+        "com.multiregion.platform.config.RetryConfig",
+        "com.multiregion.platform.config.RoutingDataSource",
+        "com.multiregion.platform.config.RoutingDataSource.clearRoute",
+        "com.multiregion.platform.config.RoutingDataSource.determineCurrentLookupKey",
+        "com.multiregion.platform.config.RoutingDataSource.routeTo"
+      ]
+    },
+    {
+      "name": "Failover",
+      "responsibility": "Entities in platform.failover",
+      "num_entities": 10,
+      "class_count": 2,
+      "function_count": 0,
+      "method_count": 8,
+      "entity_kind_counts": {
+        "class": 2,
+        "method": 8
+      },
+      "entities": [
+        "com.multiregion.platform.failover.FailoverListener",
+        "com.multiregion.platform.failover.FailoverListener.FailoverListener",
+        "com.multiregion.platform.failover.FailoverListener.checkPrimaryHealth",
+        "com.multiregion.platform.failover.FailoverListener.forceFailover",
+        "com.multiregion.platform.failover.FailoverListener.isActivated",
+        "com.multiregion.platform.failover.FailoverListener.onApplicationReady",
+        "com.multiregion.platform.web.AdminResource",
+        "com.multiregion.platform.web.AdminResource.AdminResource",
+        "com.multiregion.platform.web.AdminResource.activateFailover",
+        "com.multiregion.platform.web.AdminResource.getTopology"
+      ]
+    },
+    {
+      "name": "Web",
+      "responsibility": "Entities in platform.web",
+      "num_entities": 5,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 4,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 4
+      },
+      "entities": [
+        "com.multiregion.platform.web.HealthResource",
+        "com.multiregion.platform.web.HealthResource.HealthResource",
+        "com.multiregion.platform.web.HealthResource.getWriterNode",
+        "com.multiregion.platform.web.HealthResource.health",
+        "com.multiregion.platform.web.HealthResource.isDatabaseConnected"
+      ]
+    },
+    {
+      "name": "Application",
+      "responsibility": "Entities in product.application",
+      "num_entities": 6,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 5,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 5
+      },
+      "entities": [
+        "com.multiregion.product.application.ProductService",
+        "com.multiregion.product.application.ProductService.ProductService",
+        "com.multiregion.product.application.ProductService.deleteById",
+        "com.multiregion.product.application.ProductService.findAll",
+        "com.multiregion.product.application.ProductService.findById",
+        "com.multiregion.product.application.ProductService.save"
+      ]
+    },
+    {
+      "name": "Domain",
+      "responsibility": "Entities in product.domain",
+      "num_entities": 20,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 19,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 19
+      },
+      "entities": [
+        "com.multiregion.product.domain.Product",
+        "com.multiregion.product.domain.Product.Product",
+        "com.multiregion.product.domain.Product.getCreatedAt",
+        "com.multiregion.product.domain.Product.getId",
+        "com.multiregion.product.domain.Product.getName",
+        "com.multiregion.product.domain.Product.getPrice",
+        "com.multiregion.product.domain.Product.getRegion",
+        "com.multiregion.product.domain.Product.getUpdatedAt",
+        "com.multiregion.product.domain.Product.onCreate",
+        "com.multiregion.product.domain.Product.onUpdate",
+        "com.multiregion.product.domain.Product.setCreatedAt",
+        "com.multiregion.product.domain.Product.setId",
+        "com.multiregion.product.domain.Product.setName",
+        "com.multiregion.product.domain.Product.setPrice",
+        "com.multiregion.product.domain.Product.setRegion",
+        "com.multiregion.product.domain.Product.setUpdatedAt",
+        "com.multiregion.product.port.ProductCatalog.deleteById",
+        "com.multiregion.product.port.ProductCatalog.findAll",
+        "com.multiregion.product.port.ProductCatalog.findById",
+        "com.multiregion.product.port.ProductCatalog.save"
+      ]
+    },
+    {
+      "name": "Persistence",
+      "responsibility": "Entities in product.persistence",
+      "num_entities": 1,
+      "class_count": 0,
+      "function_count": 0,
+      "method_count": 0,
+      "entity_kind_counts": {
+        "interface": 1
+      },
+      "entities": [
+        "com.multiregion.product.persistence.ProductRepository"
+      ]
+    },
+    {
+      "name": "Port",
+      "responsibility": "Entities in product.port",
+      "num_entities": 8,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 9,
+      "entity_kind_counts": {
+        "class": 1,
+        "interface": 2,
+        "method": 9
+      },
+      "entities": [
+        "com.multiregion.platform.config.RoutingProductDataRoute",
+        "com.multiregion.platform.config.RoutingProductDataRoute.read",
+        "com.multiregion.platform.config.RoutingProductDataRoute.routed",
+        "com.multiregion.platform.config.RoutingProductDataRoute.write",
+        "com.multiregion.product.port.ProductCatalog",
+        "com.multiregion.product.port.ProductDataRoute",
+        "com.multiregion.product.port.ProductDataRoute.read",
+        "com.multiregion.product.port.ProductDataRoute.write"
+      ]
+    },
+    {
+      "name": "Web2",
+      "responsibility": "Entities in product.web",
+      "num_entities": 7,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 6,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 6
+      },
+      "entities": [
+        "com.multiregion.product.web.ProductResource",
+        "com.multiregion.product.web.ProductResource.ProductResource",
+        "com.multiregion.product.web.ProductResource.createProduct",
+        "com.multiregion.product.web.ProductResource.deleteProduct",
+        "com.multiregion.product.web.ProductResource.getAllProducts",
+        "com.multiregion.product.web.ProductResource.getProduct",
+        "com.multiregion.product.web.ProductResource.updateProduct"
+      ]
+    },
+    {
+      "name": "Application2",
+      "responsibility": "Entities in queue.application",
+      "num_entities": 25,
+      "class_count": 4,
+      "function_count": 0,
+      "method_count": 21,
+      "entity_kind_counts": {
+        "class": 4,
+        "method": 21
+      },
+      "entities": [
+        "com.multiregion.queue.application.DynamicQueueListenerCoordinator",
+        "com.multiregion.queue.application.DynamicQueueListenerCoordinator.DynamicQueueListenerCoordinator",
+        "com.multiregion.queue.application.DynamicQueueListenerCoordinator.isExpired",
+        "com.multiregion.queue.application.DynamicQueueListenerCoordinator.mode",
+        "com.multiregion.queue.application.DynamicQueueListenerCoordinator.reconcile",
+        "com.multiregion.queue.application.DynamicQueueListenerCoordinator.runningAssignments",
+        "com.multiregion.queue.application.DynamicQueueListenerCoordinator.startContainer",
+        "com.multiregion.queue.application.LocalQueueListenerCoordinator",
+        "com.multiregion.queue.application.LocalQueueListenerCoordinator.LocalQueueListenerCoordinator",
+        "com.multiregion.queue.application.LocalQueueListenerCoordinator.desiredLocalAssignments",
+        "com.multiregion.queue.application.LocalQueueListenerCoordinator.mode",
+        "com.multiregion.queue.application.LocalQueueListenerCoordinator.reconcile",
+        "com.multiregion.queue.application.LocalQueueListenerCoordinator.runningAssignments",
+        "com.multiregion.queue.application.LocalQueueListenerCoordinator.startContainer",
+        "com.multiregion.queue.application.LocalQueueListenerCoordinator.startLocalListeners",
+        "com.multiregion.queue.application.QueueManagementService",
+        "com.multiregion.queue.application.QueueManagementService.QueueManagementService",
+        "com.multiregion.queue.application.QueueManagementService.assignmentsFor",
+        "com.multiregion.queue.application.QueueManagementService.snapshot",
+        "com.multiregion.queue.application.QueueManagementService.updateStatus",
+        "com.multiregion.queue.config.QueueCoordinationScheduler",
+        "com.multiregion.queue.config.QueueCoordinationScheduler.QueueCoordinationScheduler",
+        "com.multiregion.queue.config.QueueCoordinationScheduler.reconcileLocalListeners",
+        "com.multiregion.queue.config.QueueCoordinationScheduler.reconcileTakeoverListeners",
+        "com.multiregion.queue.config.QueueCoordinationScheduler.startLocalListeners"
+      ]
+    },
+    {
+      "name": "Config2",
+      "responsibility": "Entities in queue.config",
+      "num_entities": 7,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 6,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 6
+      },
+      "entities": [
+        "com.multiregion.queue.config.QueueListenerConfiguration",
+        "com.multiregion.queue.config.QueueListenerConfiguration.dynamicQueueListenerCoordinator",
+        "com.multiregion.queue.config.QueueListenerConfiguration.localQueueListenerCoordinator",
+        "com.multiregion.queue.config.QueueListenerConfiguration.queueClock",
+        "com.multiregion.queue.config.QueueListenerConfiguration.queueListenerProvisioner",
+        "com.multiregion.queue.config.QueueListenerConfiguration.queueManagementUseCase",
+        "com.multiregion.queue.config.QueueListenerConfiguration.rabbitQueueListenerProvisioner"
+      ]
+    },
+    {
+      "name": "Domain2",
+      "responsibility": "Entities in queue.domain",
+      "num_entities": 13,
+      "class_count": 2,
+      "function_count": 0,
+      "method_count": 9,
+      "entity_kind_counts": {
+        "class": 2,
+        "enum": 2,
+        "method": 9
+      },
+      "entities": [
+        "com.multiregion.queue.domain.ListenerMode",
+        "com.multiregion.queue.domain.QueueAssignmentComparators",
+        "com.multiregion.queue.domain.QueueAssignmentComparators.QueueAssignmentComparators",
+        "com.multiregion.queue.domain.QueueHealthStatus",
+        "com.multiregion.queue.domain.QueueTakeoverPlanner",
+        "com.multiregion.queue.domain.QueueTakeoverPlanner.plan",
+        "com.multiregion.queue.port.QueueAssignmentCoordinator.mode",
+        "com.multiregion.queue.port.QueueAssignmentCoordinator.reconcile",
+        "com.multiregion.queue.port.QueueAssignmentCoordinator.runningAssignments",
+        "com.multiregion.queue.port.QueueManagementUseCase.snapshot",
+        "com.multiregion.queue.port.QueueManagementUseCase.updateStatus",
+        "com.multiregion.queue.port.QueueRegionStateStore.findAll",
+        "com.multiregion.queue.port.QueueRegionStateStore.updateStatus"
+      ]
+    },
+    {
+      "name": "Logging",
+      "responsibility": "Entities in queue.logging",
+      "num_entities": 1,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 1,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 1
+      },
+      "entities": [
+        "com.multiregion.queue.logging.LoggingQueueListenerProvisioner"
+      ]
+    },
+    {
+      "name": "Persistence2",
+      "responsibility": "Entities in queue.persistence",
+      "num_entities": 6,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 5,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 5
+      },
+      "entities": [
+        "com.multiregion.queue.persistence.JdbcQueueRegionStateStore",
+        "com.multiregion.queue.persistence.JdbcQueueRegionStateStore.JdbcQueueRegionStateStore",
+        "com.multiregion.queue.persistence.JdbcQueueRegionStateStore.findAll",
+        "com.multiregion.queue.persistence.JdbcQueueRegionStateStore.initialize",
+        "com.multiregion.queue.persistence.JdbcQueueRegionStateStore.mapRow",
+        "com.multiregion.queue.persistence.JdbcQueueRegionStateStore.updateStatus"
+      ]
+    },
+    {
+      "name": "Port2",
+      "responsibility": "Entities in queue.port",
+      "num_entities": 30,
+      "class_count": 2,
+      "function_count": 0,
+      "method_count": 29,
+      "entity_kind_counts": {
+        "class": 2,
+        "interface": 6,
+        "method": 29
+      },
+      "entities": [
+        "com.multiregion.queue.logging.LoggingQueueListenerContainer",
+        "com.multiregion.queue.logging.LoggingQueueListenerContainer.LoggingQueueListenerContainer",
+        "com.multiregion.queue.logging.LoggingQueueListenerContainer.assignment",
+        "com.multiregion.queue.logging.LoggingQueueListenerContainer.isRunning",
+        "com.multiregion.queue.logging.LoggingQueueListenerContainer.start",
+        "com.multiregion.queue.logging.LoggingQueueListenerContainer.stop",
+        "com.multiregion.queue.logging.LoggingQueueListenerProvisioner.create",
+        "com.multiregion.queue.port.QueueAssignmentCoordinator",
+        "com.multiregion.queue.port.QueueCoordinationPolicy",
+        "com.multiregion.queue.port.QueueCoordinationPolicy.names",
+        "com.multiregion.queue.port.QueueCoordinationPolicy.regions",
+        "com.multiregion.queue.port.QueueCoordinationPolicy.takeoverMaxDurationMs",
+        "com.multiregion.queue.port.QueueListenerContainer",
+        "com.multiregion.queue.port.QueueListenerContainer.assignment",
+        "com.multiregion.queue.port.QueueListenerContainer.isRunning",
+        "com.multiregion.queue.port.QueueListenerContainer.start",
+        "com.multiregion.queue.port.QueueListenerContainer.stop",
+        "com.multiregion.queue.port.QueueListenerProvisioner",
+        "com.multiregion.queue.port.QueueListenerProvisioner.create",
+        "com.multiregion.queue.port.QueueManagementUseCase",
+        "com.multiregion.queue.port.QueueRegionStateStore",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerContainer",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerContainer.RabbitMqQueueListenerContainer",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerContainer.assignment",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerContainer.isRunning",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerContainer.onMessage",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerContainer.start",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerContainer.stop",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerProvisioner.RabbitMqQueueListenerProvisioner",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerProvisioner.create"
+      ]
+    },
+    {
+      "name": "Rabbitmq",
+      "responsibility": "Entities in queue.rabbitmq",
+      "num_entities": 5,
+      "class_count": 2,
+      "function_count": 0,
+      "method_count": 5,
+      "entity_kind_counts": {
+        "class": 2,
+        "method": 5
+      },
+      "entities": [
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueInitializer",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueInitializer.RabbitMqQueueInitializer",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueInitializer.connectionFactory",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueInitializer.declareQueues",
+        "com.multiregion.queue.rabbitmq.RabbitMqQueueListenerProvisioner"
+      ]
+    },
+    {
+      "name": "Web3",
+      "responsibility": "Entities in queue.web",
+      "num_entities": 7,
+      "class_count": 1,
+      "function_count": 0,
+      "method_count": 6,
+      "entity_kind_counts": {
+        "class": 1,
+        "method": 6
+      },
+      "entities": [
+        "com.multiregion.queue.web.QueueAdminResource",
+        "com.multiregion.queue.web.QueueAdminResource.QueueAdminResource",
+        "com.multiregion.queue.web.QueueAdminResource.listQueues",
+        "com.multiregion.queue.web.QueueAdminResource.markDown",
+        "com.multiregion.queue.web.QueueAdminResource.markUp",
+        "com.multiregion.queue.web.QueueAdminResource.response",
+        "com.multiregion.queue.web.QueueAdminResource.statusResponse"
+      ]
+    }
+  ],
+  "metrics": {
+    "RCI": 0.1545,
+    "TurboMQ": 0.126,
+    "BasicMQ": 0.126,
+    "IntraConnectivity": 0.0128,
+    "InterConnectivity": 0.1395,
+    "TwoWayPairRatio": 0.0
+  },
+  "derived_metrics": {
+    "DependencyHealth": 0.9233,
+    "ComponentBalance": 0.548,
+    "HubBalance": 0.6471,
+    "BoundaryClarity": 0.9804,
+    "DependencyDistribution": 0.5639,
+    "SmellDiscipline": 1.0,
+    "PrincipleAlignmentScore": 0.8729,
+    "BalancedArchitectureScore": 0.5235
+  },
+  "principle_signals": {
+    "AcyclicDependencies": 1.0,
+    "LayeringHealth": 0.9425,
+    "ResponsibilityFocus": 1.0,
+    "InterfaceSegregation": 1.0,
+    "ComponentBalance": 0.548,
+    "HubBalance": 0.6471,
+    "BoundaryClarity": 0.9804,
+    "DependencyDistribution": 0.5639,
+    "SmellDiscipline": 1.0
+  },
+  "score_drivers": {
+    "risks": [
+      {
+        "name": "ComponentBalance",
+        "value": 0.548,
+        "gap_to_ideal": 0.452
+      },
+      {
+        "name": "DependencyDistribution",
+        "value": 0.5639,
+        "gap_to_ideal": 0.4361
+      },
+      {
+        "name": "HubBalance",
+        "value": 0.6471,
+        "gap_to_ideal": 0.3529
+      }
+    ],
+    "strengths": [
+      {
+        "name": "AcyclicDependencies",
+        "value": 1.0,
+        "gap_to_ideal": 0.0
+      },
+      {
+        "name": "InterfaceSegregation",
+        "value": 1.0,
+        "gap_to_ideal": 0.0
+      },
+      {
+        "name": "ResponsibilityFocus",
+        "value": 1.0,
+        "gap_to_ideal": 0.0
+      }
+    ]
+  },
+  "smells": [],
+  "analysis_source_path": "app/src/main/java",
+  "arcade_agent_version": "0.1.1"
+}

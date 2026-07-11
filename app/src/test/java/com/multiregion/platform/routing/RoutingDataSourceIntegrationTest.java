@@ -1,4 +1,4 @@
-package com.multiregion.platform.config;
+package com.multiregion.platform.routing;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,16 +15,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RoutingDataSourceIntegrationTest {
 
     private DataSource routingDataSource;
+    private RoutingDataSource regionalRoutingDataSource;
     private RoutingProductDataRoute dataRoute;
 
     @BeforeEach
     void setUp() {
         DataSource writer = dataSource("writer");
         DataSource reader = dataSource("reader");
+        DataSource promotedWriter = dataSource("promoted-writer");
         initialize(writer, "writer");
         initialize(reader, "reader");
+        initialize(promotedWriter, "promoted-writer");
 
-        routingDataSource = new DataSourceConfig().routingDataSource(writer, reader);
+        RoutingDataSources config = new RoutingDataSources();
+        regionalRoutingDataSource = config.regionalRoutingDataSource(
+                writer,
+                reader,
+                promotedWriter);
+        routingDataSource = config.routingDataSource(regionalRoutingDataSource);
         dataRoute = new RoutingProductDataRoute();
     }
 
@@ -49,6 +57,30 @@ class RoutingDataSourceIntegrationTest {
                         .queryForObject("SELECT pool_name FROM routing_probe", String.class)));
 
         assertThat(selectedPool).isEqualTo("writer");
+    }
+
+    @Test
+    void explicitWriterRouteMovesToLocalPoolAfterPromotion() {
+        regionalRoutingDataSource.activatePromotedWriter();
+        TransactionTemplate transaction = transactionTemplate(true);
+
+        String selectedPool = transaction.execute(status -> dataRoute.write(
+                () -> new JdbcTemplate(routingDataSource)
+                        .queryForObject("SELECT pool_name FROM routing_probe", String.class)));
+
+        assertThat(selectedPool).isEqualTo("promoted-writer");
+    }
+
+    @Test
+    void readerRouteRemainsRegionalAfterWriterPromotion() {
+        regionalRoutingDataSource.activatePromotedWriter();
+        TransactionTemplate transaction = transactionTemplate(false);
+
+        String selectedPool = transaction.execute(status -> dataRoute.read(
+                () -> new JdbcTemplate(routingDataSource)
+                        .queryForObject("SELECT pool_name FROM routing_probe", String.class)));
+
+        assertThat(selectedPool).isEqualTo("reader");
     }
 
     private TransactionTemplate transactionTemplate(boolean readOnly) {
