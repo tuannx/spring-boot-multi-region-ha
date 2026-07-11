@@ -59,7 +59,25 @@ require_cmd() {
   fi
 }
 
-require_cmd python3
+find_python3() {
+  local candidate resolved
+  for candidate in "${PYTHON3:-}" python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do
+    [[ -n "$candidate" ]] || continue
+    resolved="$(command -v "$candidate" 2>/dev/null || true)"
+    if [[ -n "$resolved" ]] && "$resolved" -c \
+        'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' 2>/dev/null; then
+      printf '%s\n' "$resolved"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PYTHON_BIN="$(find_python3 || true)"
+if [[ -z "$PYTHON_BIN" ]]; then
+  echo "Python 3.8 or newer is required" >&2
+  exit 127
+fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -74,7 +92,7 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 REPORT_JSON="$REPORT_DIR/queue-takeover-$STAMP.json"
 REPORT_MD="$REPORT_DIR/queue-takeover-$STAMP.md"
 
-python3 - "$BASE_URL" "$BROTHER_BASE_URL" "$QUEUE_NAME" "$LOCAL_REGION" "$BROTHER_REGION" "$SIMULATE_BROTHER_APP_DOWN" "$BROTHER_APP_CONTAINER" "$TIMEOUT_SECONDS" "$POLL_INTERVAL_SECONDS" "$REPORT_JSON" "$REPORT_MD" <<'PY'
+"$PYTHON_BIN" - "$BASE_URL" "$BROTHER_BASE_URL" "$QUEUE_NAME" "$LOCAL_REGION" "$BROTHER_REGION" "$SIMULATE_BROTHER_APP_DOWN" "$BROTHER_APP_CONTAINER" "$TIMEOUT_SECONDS" "$POLL_INTERVAL_SECONDS" "$REPORT_JSON" "$REPORT_MD" <<'PY'
 import json
 import http.client
 import subprocess

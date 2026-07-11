@@ -73,6 +73,7 @@ replay_pid*
 # ============================================
 test-results/
 test-output/
+reports/queue-takeover/
 *.test.js
 *.test.ts
 __pycache__/
