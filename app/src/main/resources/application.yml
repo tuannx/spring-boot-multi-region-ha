@@ -60,6 +60,7 @@ ACTIVE_WRITER_DB_PORT: ${ACTIVE_WRITER_DB_PORT:5432}
 queues:
   enabled: true
   listener-type: ${QUEUE_LISTENER_TYPE:logging}
+  poll-interval-ms: ${QUEUE_POLL_INTERVAL_MS:5000}
   takeover-poll-interval-ms: ${QUEUE_TAKEOVER_POLL_INTERVAL_MS:60000}
   takeover-max-duration-ms: ${QUEUE_TAKEOVER_MAX_DURATION_MS:1800000}
   names:

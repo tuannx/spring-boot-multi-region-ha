@@ -321,17 +321,24 @@ curl -s -X POST "http://localhost:8080/admin/queues/orders/eu-west-1/down?reason
 curl -s -X POST "http://localhost:8080/admin/queues/orders/eu-west-1/up?reason=broker-recovered" | jq
 ```
 
-Acceptance benchmark:
+End-to-end acceptance:
 
 ```bash
-# Run against an already running local stack
+# Product routing plus real app/database/RabbitMQ queue takeover
+./scripts/e2e-acceptance.sh --start --cleanup
+
+# Queue-only benchmark against an already running stack
 ./scripts/queue-takeover-acceptance.sh
 
-# Or start/build the Docker stack first
+# Or start/build the stack for the queue-only benchmark
 ./scripts/queue-takeover-acceptance.sh --start
 ```
 
-The script writes JSON and Markdown reports under `reports/queue-takeover/`, including baseline delay, takeover delay, release delay, final assignments, and an app log snapshot when Docker is available.
+The full E2E verifies region-specific read pools, EU-to-US writer routing,
+product cleanup, an actual EU app outage, RabbitMQ listener takeover, and
+takeover release. Queue evidence is written as JSON and Markdown under
+`reports/queue-takeover/`, including timings, final assignments, and log
+snapshots when Docker is available.
 
 ## Project Structure
 
@@ -385,6 +392,7 @@ Agent continuously measures package balance and architecture drift; see
 | `ACTIVE_WRITER_DB_HOST` | `postgres-us` | Active single-writer database host |
 | `ACTIVE_WRITER_DB_PORT` | `5432` | Active single-writer database port |
 | `APP_PORT` | `8080` | Application HTTP port |
+| `QUEUE_POLL_INTERVAL_MS` | `5000` | Local listener reconciliation interval |
 | `QUEUE_TAKEOVER_POLL_INTERVAL_MS` | `60000` | Dynamic takeover reconciliation interval |
 | `QUEUE_TAKEOVER_MAX_DURATION_MS` | `1800000` | Maximum takeover lease duration before auto-release |
 | `QUEUE_RETRY_DELAY_MS` | `5000` | RabbitMQ retry queue delay before routing back to main queue |

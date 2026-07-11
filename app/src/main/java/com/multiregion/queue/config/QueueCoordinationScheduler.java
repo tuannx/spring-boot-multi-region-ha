@@ -27,7 +27,7 @@ public class QueueCoordinationScheduler {
         localCoordinator.reconcile();
     }
 
-    @Scheduled(fixedDelayString = "${queues.takeover-poll-interval-ms:60000}")
+    @Scheduled(fixedDelayString = "${queues.poll-interval-ms:5000}")
     public void reconcileLocalListeners() {
         localCoordinator.reconcile();
     }

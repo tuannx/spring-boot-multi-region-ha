@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.datasource.LazyConnectionDataSourceProxy;
 
 import javax.sql.DataSource;
 import java.util.HashMap;
@@ -109,6 +110,7 @@ public class DataSourceConfig {
         RoutingDataSource routing = new RoutingDataSource();
         routing.setDefaultTargetDataSource(writeDataSource);
         routing.setTargetDataSources(targetSources);
-        return routing;
+        routing.afterPropertiesSet();
+        return new LazyConnectionDataSourceProxy(routing);
     }
 }

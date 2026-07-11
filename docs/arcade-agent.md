@@ -9,9 +9,9 @@ the deterministic `pkg` recovery algorithm:
 
 | Metric | Before | After | Change |
 |--------|-------:|------:|-------:|
-| BalancedArchitectureScore | 0.3629 | 0.5232 | +44.2% |
-| PrincipleAlignmentScore | 0.6613 | 0.8703 | +31.6% |
-| ComponentBalance | 0.3688 | 0.5590 | +51.6% |
+| BalancedArchitectureScore | 0.3629 | 0.5235 | +44.3% |
+| PrincipleAlignmentScore | 0.6613 | 0.8729 | +32.0% |
+| ComponentBalance | 0.3688 | 0.5480 | +48.6% |
 | HubBalance | 0.3333 | 0.6471 | +94.2% |
 | SmellDiscipline | 0.0000 | 1.0000 | +1.0000 |
 | Architectural smells | 6 | 0 | -100% |

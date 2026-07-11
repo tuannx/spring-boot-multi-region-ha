@@ -1,7 +1,7 @@
 package com.multiregion.product.application;
 
 import com.multiregion.product.domain.Product;
-import com.multiregion.product.persistence.ProductRepository;
+import com.multiregion.product.port.ProductCatalog;
 import com.multiregion.product.port.ProductDataRoute;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,27 +39,27 @@ public class ProductService {
 
     private static final Logger log = LoggerFactory.getLogger(ProductService.class);
 
-    private final ProductRepository productRepository;
+    private final ProductCatalog productCatalog;
     private final ProductDataRoute dataRoute;
     private final String awsRegion;
 
     public ProductService(
-            ProductRepository productRepository,
+            ProductCatalog productCatalog,
             ProductDataRoute dataRoute,
             @Value("${AWS_REGION:us-east-1}") String awsRegion) {
-        this.productRepository = productRepository;
+        this.productCatalog = productCatalog;
         this.dataRoute = dataRoute;
         this.awsRegion = awsRegion;
     }
 
     @Transactional(readOnly = true)
     public List<Product> findAll() {
-        return dataRoute.read(productRepository::findAll);
+        return dataRoute.read(productCatalog::findAll);
     }
 
     @Transactional(readOnly = true)
     public Optional<Product> findById(Long id) {
-        return dataRoute.read(() -> productRepository.findById(id));
+        return dataRoute.read(() -> productCatalog.findById(id));
     }
 
     /**
@@ -84,7 +84,7 @@ public class ProductService {
                 product.setRegion(awsRegion);
             }
             log.debug("Saving product: {} in region {}", product.getName(), product.getRegion());
-            return productRepository.save(product);
+            return productCatalog.save(product);
         });
     }
 
@@ -102,11 +102,7 @@ public class ProductService {
         backoff = @Backoff(delay = 500, multiplier = 2, maxDelay = 4000)
     )
     public void deleteById(Long id) {
-        dataRoute.write(() -> productRepository.deleteById(id));
+        dataRoute.write(() -> productCatalog.deleteById(id));
     }
 
-    @Transactional(readOnly = true)
-    public List<Product> findByRegion(String region) {
-        return dataRoute.read(() -> productRepository.findByRegion(region));
-    }
 }

@@ -19,4 +19,19 @@ class ProductArchitectureTest {
                     "..product.port..",
                     "..product.application..")
             .should().dependOnClassesThat().resideInAPackage("..platform..");
+
+    @ArchTest
+    static final ArchRule product_core_does_not_depend_on_adapters = noClasses()
+            .that().resideInAnyPackage(
+                    "..product.domain..",
+                    "..product.port..",
+                    "..product.application..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    "..product.persistence..",
+                    "..product.web..");
+
+    @ArchTest
+    static final ArchRule product_web_does_not_depend_on_persistence = noClasses()
+            .that().resideInAPackage("..product.web..")
+            .should().dependOnClassesThat().resideInAPackage("..product.persistence..");
 }

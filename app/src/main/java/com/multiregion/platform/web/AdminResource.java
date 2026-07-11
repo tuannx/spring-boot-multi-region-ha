@@ -2,6 +2,7 @@ package com.multiregion.platform.web;
 
 import com.multiregion.platform.failover.FailoverListener;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -17,13 +18,13 @@ import java.util.*;
 public class AdminResource {
 
     private final DataSource dataSource;
-    private final FailoverListener failoverListener;
+    private final ObjectProvider<FailoverListener> failoverListener;
     private final String awsRegion;
     private final String regionRole;
 
     public AdminResource(
             DataSource dataSource,
-            FailoverListener failoverListener,
+            ObjectProvider<FailoverListener> failoverListener,
             @Value("${AWS_REGION:us-east-1}") String awsRegion,
             @Value("${REGION_ROLE:primary}") String regionRole) {
         this.dataSource = dataSource;
@@ -37,7 +38,10 @@ public class AdminResource {
      */
     @PostMapping("/failover-activate")
     public ResponseEntity<Map<String, Object>> activateFailover() {
-        failoverListener.forceFailover();
+        FailoverListener listener = failoverListener.getIfAvailable();
+        if (listener != null) {
+            listener.forceFailover();
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "activated");

@@ -11,6 +11,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class QueuePropertiesBindingTest {
 
     @Test
+    void normalizesMissingCollectionsToEmptyImmutableLists() {
+        QueueCoordinationProperties queues = new QueueCoordinationProperties(
+                true, 5_000, 60_000, 1_800_000, null, null);
+
+        assertThat(queues.names()).isEmpty();
+        assertThat(queues.regions()).isEmpty();
+    }
+
+    @Test
     void bindsImmutableCoordinationAndRabbitMqConfiguration() {
         MockEnvironment environment = new MockEnvironment()
                 .withProperty("queues.names[0]", "orders")

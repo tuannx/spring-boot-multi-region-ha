@@ -17,7 +17,7 @@ public record QueueCoordinationProperties(
 ) implements QueueCoordinationPolicy {
 
     public QueueCoordinationProperties {
-        names = List.copyOf(names);
-        regions = List.copyOf(regions);
+        names = names == null ? List.of() : List.copyOf(names);
+        regions = regions == null ? List.of() : List.copyOf(regions);
     }
 }

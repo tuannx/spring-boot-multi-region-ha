@@ -28,16 +28,14 @@ public class RoutingDataSource extends AbstractRoutingDataSource {
 
     @Override
     protected Object determineCurrentLookupKey() {
-        // First check ThreadLocal (explicit routing)
         String explicit = contextHolder.get();
         if (explicit != null) {
-            System.err.println("ROUTING_DEBUG: explicit=" + explicit);
+            logger.debug("Routing connection to explicit {} pool", explicit);
             return explicit;
         }
-        // Fallback to @Transactional(readOnly=true) hint
         boolean readOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
         String key = readOnly ? "reader" : "writer";
-        System.err.println("ROUTING_DEBUG: readOnly=" + readOnly + " key=" + key);
+        logger.debug("Routing connection using transaction readOnly={} to {} pool", readOnly, key);
         return key;
     }
 }

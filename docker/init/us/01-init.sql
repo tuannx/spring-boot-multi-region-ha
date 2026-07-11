@@ -21,7 +21,7 @@ RETURNS TABLE(
 ) AS $$
 BEGIN
   RETURN QUERY VALUES
-    ('postgres-us'::TEXT, 'postgres-us.*MASTER_SESSION_ID.*10::INTEGER, 0::INTEGER, NOW()::TIMESTAMP),
+    ('postgres-us'::TEXT, 'MASTER_SESSION_ID'::TEXT, 10::INTEGER, 0::INTEGER, NOW()::TIMESTAMP),
     ('postgres-eu'::TEXT, 'postgres-eu'::TEXT,          8::INTEGER, 85::INTEGER, NOW()::TIMESTAMP);
 END;
 $$ LANGUAGE plpgsql STABLE;

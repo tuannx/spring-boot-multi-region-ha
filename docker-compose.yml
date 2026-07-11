@@ -31,7 +31,7 @@ services:
       dockerfile: Dockerfile
       args:
         SPRING_PROFILES_ACTIVE: region-us
-    image: multiregion-app:latest
+    image: multiregion-app-us:latest
     container_name: multiregion-app-us
     environment:
       SPRING_PROFILES_ACTIVE: region-us
@@ -96,7 +96,7 @@ services:
       dockerfile: Dockerfile
       args:
         SPRING_PROFILES_ACTIVE: region-eu
-    image: multiregion-app:latest
+    image: multiregion-app-eu:latest
     container_name: multiregion-app-eu
     environment:
       SPRING_PROFILES_ACTIVE: region-eu

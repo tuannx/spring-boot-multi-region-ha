@@ -2,7 +2,6 @@ package com.multiregion.product.web;
 
 import com.multiregion.product.application.ProductService;
 import com.multiregion.product.domain.Product;
-import com.multiregion.product.persistence.ReadOnlyProductRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,17 +13,14 @@ import java.util.List;
 public class ProductResource {
 
     private final ProductService productService;
-    private final ReadOnlyProductRepository readOnlyRepo;
 
-    public ProductResource(ProductService productService, ReadOnlyProductRepository readOnlyRepo) {
+    public ProductResource(ProductService productService) {
         this.productService = productService;
-        this.readOnlyRepo = readOnlyRepo;
     }
 
     @GetMapping
     public ResponseEntity<List<Product>> getAllProducts() {
-        // Reads from ReadPool (reader replica in other region)
-        return ResponseEntity.ok(readOnlyRepo.findAll());
+        return ResponseEntity.ok(productService.findAll());
     }
 
     @GetMapping("/{id}")
