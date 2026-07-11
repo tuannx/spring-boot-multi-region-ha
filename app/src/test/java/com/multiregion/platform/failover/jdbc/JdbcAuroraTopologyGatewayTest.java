@@ -10,6 +10,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.sql.DataSource;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.sql.SQLException;
 import java.sql.SQLTransientConnectionException;
 
@@ -37,6 +38,19 @@ class JdbcAuroraTopologyGatewayTest {
         DataSource dataSource = mock(DataSource.class);
         SQLException networkFailure = new SQLException("network failure");
         networkFailure.initCause(new SocketException("connection reset"));
+        when(dataSource.getConnection()).thenThrow(networkFailure);
+        JdbcAuroraTopologyGateway gateway = gateway(dataSource);
+
+        PrimaryProbeResult result = gateway.probePrimary();
+
+        assertThat(result.status()).isEqualTo(PrimaryProbeStatus.UNREACHABLE);
+    }
+
+    @Test
+    void socketTimeoutInCauseChainIsClassifiedAsUnreachable() throws SQLException {
+        DataSource dataSource = mock(DataSource.class);
+        SQLException networkFailure = new SQLException("network read timed out");
+        networkFailure.initCause(new SocketTimeoutException("read timed out"));
         when(dataSource.getConnection()).thenThrow(networkFailure);
         JdbcAuroraTopologyGateway gateway = gateway(dataSource);
 

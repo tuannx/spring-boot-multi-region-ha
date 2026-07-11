@@ -397,7 +397,7 @@ and architecture drift; the reproducible baseline workflow is documented in
 | `FAILOVER_WRITER_DB_HOST` | `postgres-eu` | Authoritative promoted-writer host used by both compute regions after switchover |
 | `FAILOVER_WRITER_DB_PORT` | `5432` | Promoted-writer database port |
 | `FAILOVER_FAILURE_THRESHOLD` | `3` | Consecutive primary-unreachable probes required before a promotion decision |
-| `FAILOVER_ALLOW_UNFENCED_PROMOTION` | `false` | Unsafe demo opt-in; when false, unreachable authority cannot be promoted automatically |
+| `FAILOVER_ALLOW_UNFENCED_PROMOTION` | `false` | Unsafe demo opt-in; when false, unreachable authority cannot be promoted or trusted during restart reconciliation |
 | `APP_PORT` | `8080` | Application HTTP port |
 | `QUEUE_POLL_INTERVAL_MS` | `5000` | Local listener reconciliation interval |
 | `QUEUE_TAKEOVER_POLL_INTERVAL_MS` | `60000` | Dynamic takeover reconciliation interval |
@@ -430,7 +430,10 @@ A demoted US compute process switches its writes to the promoted EU pool, so
 queue and product writes do not continue against the fenced database. Three
 connectivity-classified failures trigger a decision, but the safe default
 refuses promotion when authority is unreachable; schema/configuration/query
-timeouts are also reported without promotion. Production still needs a real
+timeouts are also reported without promotion. The same fail-closed rule applies
+when a promoted secondary restarts while authority is unreachable; operators
+who explicitly enable `FAILOVER_ALLOW_UNFENCED_PROMOTION` choose availability
+over split-brain protection for that case. Production still needs a real
 consensus/quorum, fencing token or lease, and a production promotion adapter.
 
 ### Nginx request routing

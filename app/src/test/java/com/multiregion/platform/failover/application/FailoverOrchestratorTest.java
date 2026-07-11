@@ -189,6 +189,38 @@ class FailoverOrchestratorTest {
     }
 
     @Test
+    void secondaryRestartFailsClosedWhenPersistedWriterAuthorityIsUnreachable() {
+        Fixture fixture = fixture();
+        when(fixture.promotion().isLocalWriter()).thenReturn(true);
+        when(fixture.topology().probePrimary())
+                .thenReturn(PrimaryProbeResult.unreachable("primary endpoint unavailable"));
+        FailoverOrchestrator orchestrator = fixture.orchestrator(false, 1, false);
+
+        boolean active = orchestrator.reconcilePersistedState();
+
+        assertThat(active).isFalse();
+        assertThat(orchestrator.isActivated()).isFalse();
+        verify(fixture.traffic()).restoreInitialWriter();
+        verify(fixture.traffic(), never()).activatePromotedWriter();
+    }
+
+    @Test
+    void secondaryRestartCanRetainPromotedRouteWithExplicitUnsafeOptIn() {
+        Fixture fixture = fixture();
+        when(fixture.promotion().isLocalWriter()).thenReturn(true);
+        when(fixture.topology().probePrimary())
+                .thenReturn(PrimaryProbeResult.unreachable("primary endpoint unavailable"));
+        FailoverOrchestrator orchestrator = fixture.orchestrator(false, 1, true);
+
+        boolean active = orchestrator.reconcilePersistedState();
+
+        assertThat(active).isTrue();
+        assertThat(orchestrator.isActivated()).isTrue();
+        verify(fixture.traffic()).activatePromotedWriter();
+        verify(fixture.traffic(), never()).restoreInitialWriter();
+    }
+
+    @Test
     void staleSecondaryWriterFlagIsRejectedWhenAuthorityReturnedToPrimary() {
         Fixture fixture = fixture();
         when(fixture.promotion().isLocalWriter()).thenReturn(true);

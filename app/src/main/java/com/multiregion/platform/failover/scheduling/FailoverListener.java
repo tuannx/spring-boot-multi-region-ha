@@ -37,6 +37,8 @@ public class FailoverListener {
         try {
             if (failoverControl.reconcilePersistedState()) {
                 log.info("Writer authority reconciled and application write routing is active");
+            } else {
+                log.warn("Writer authority could not be verified; process remains in standby");
             }
         } catch (RuntimeException reconciliationFailure) {
             log.error(

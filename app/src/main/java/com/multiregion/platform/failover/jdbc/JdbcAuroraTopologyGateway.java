@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import javax.sql.DataSource;
 import java.net.ConnectException;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.sql.SQLException;
 import java.util.List;
 
@@ -94,7 +95,9 @@ public class JdbcAuroraTopologyGateway implements AuroraTopologyGateway {
                     return true;
                 }
             }
-            if (current instanceof ConnectException || current instanceof SocketException) {
+            if (current instanceof ConnectException
+                    || current instanceof SocketException
+                    || current instanceof SocketTimeoutException) {
                 return true;
             }
             current = current.getCause();
