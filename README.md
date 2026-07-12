@@ -7,41 +7,48 @@
 
 A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** `failover2` plugin. This project simulates Aurora topology and control-plane state with local PostgreSQL instances, including bounded failover detection, runtime writer routing, nginx request routing, and region-aware health monitoring.
 
-```
+```text
                          ┌─────────────────────────────────────────────┐
                          │           nginx-router (port 8000)          │
-                         │         Load Balancer + Health Check         │
+                         │    Routes requests to source/home region    │
                          └──────────┬──────────────────────┬───────────┘
                                     │                      │
                     ┌───────────────┘                      └───────────────┐
                     ▼                                                     ▼
-        ┌───────────────────────┐                            ┌───────────────────────┐
-        │   Region: us-east-1   │                            │   Region: eu-west-1   │
-        │   Role: PRIMARY       │                            │   Role: SECONDARY     │
-        │   Writer Instance     │                            │   Reader Instance     │
-        │                       │                            │                       │
-        │  ┌─────────────────┐  │                            │  ┌─────────────────┐  │
-        │  │   app-us:8080   │  │                            │  │  app-eu:8080    │  │
-        │  │  (Spring Boot)  │  │                            │  │  (Spring Boot)  │  │
-        │  └────────┬────────┘  │                            │  └────────┬────────┘  │
-        │           │           │                            │           │           │
-        │  ┌────────▼────────┐  │                            │  ┌────────▼────────┐  │
-        │  │ postgres-us:5432│  │                            │  │ postgres-eu:5432│  │
-        │  │  (Primary DB)   │  │                            │  │  (Standby DB)   │  │
-        │  └─────────────────┘  │                            │  └─────────────────┘  │
-        └───────────────────────┘                            └───────────────────────┘
-                                    │                      │
-                    ┌───────────────┘                      └───────────────┐
-                    │                AWS Aurora Global DB                   │
-                    │         (Simulated via mock pg_catalog functions)      │
-                    └─────────────────────────────────────────────────────────┘
+        ┌───────────────────────────┐                        ┌───────────────────────────┐
+        │      Region: us-east-1    │                        │      Region: eu-west-1    │
+        │                           │                        │                           │
+        │  ┌─────────────────────┐  │                        │  ┌─────────────────────┐  │
+        │  │     app-us:8080     │  │                        │  │     app-eu:8080     │  │
+        │  │  reads ──► home DB  │  │                        │  │  reads ──► home DB  │  │
+        │  │  writes ─► writer   │──┼──────────────┐  ┌──────┼──│  writes ─► writer   │  │
+        │  └──────────┬──────────┘  │              │  │      │  └──────────┬──────────┘  │
+        │             │ reads       │              │  │      │             │ reads       │
+        │  ┌──────────▼──────────┐  │              │  │      │  ┌──────────▼──────────┐  │
+        │  │  postgres-us:5432   │◄─┼─ writer in US┘  │      │  │  postgres-eu:5432   │  │
+        │  │ US home read target │  │                 │      │  │ EU home read target │  │
+        │  └─────────────────────┘  │      writer in EU ─────┼─►│  (after switchover) │  │
+        └───────────────────────────┘                        └───────────────────────────┘
+
+               One global writer follows the active business region (“follow the sun”).
+               Each app keeps reads in its own home region, independent of writer location.
 ```
+
+The architecture deliberately separates read and write routing:
+
+- **Writer — follow the sun:** both application regions send mutations to the same authoritative global writer. A fenced, verified switchover can move that writer from US to EU (or back); there is never more than one writer.
+- **Reader — home region:** `app-us` reads from `postgres-us`, while `app-eu` reads from `postgres-eu`. Moving the writer does not move the normal read route.
+- **Compute — source region:** nginx sends a request to the application region matching `X-Source-Region`; the selected app then applies the writer/reader rules above.
+
+In the local demo the initial writer is `postgres-us`, and the demonstrated switchover moves it to `postgres-eu`. “Follow the sun” describes this controlled ownership handoff; it is not an automatic clock-based scheduler or an active-active/multi-writer design.
 
 ## Features
 
 - **Multi-region topology**: Simulates two AWS regions (us-east-1 and eu-west-1)
+- **Follow-the-sun writer**: One global writer can move between regions through a fenced, verified switchover
+- **Home-region readers**: Each application reads from its own regional database regardless of writer location
 - **AWS JDBC Wrapper**: Failover-aware initial writer/reader pools via `failover2`
-- **Automatic failover detection**: Secondary region detects primary outage and activates
+- **Failover detection and activation**: Secondary region detects primary outage and activates only after writer authority is verified (unless the unsafe demo opt-in is enabled)
 - **Manual failover**: Admin endpoint for forced failover activation
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
@@ -150,12 +157,12 @@ curl -s -X DELETE http://localhost:8080/api/products/3
 
 ### Regional Execution Rules
 
-This project models warm-standby multi-region operation, not active-active writes. The default rule is to keep compute close to the source data and move ownership only during DR:
+This project models a single-writer multi-region deployment, not active-active writes. Compute and reads stay regional, while write ownership can follow the active business region through a controlled switchover:
 
 1. **HTTP source region owns request compute**: Route an incoming HTTP request to the app in the same region as the request source whenever that region is healthy. The local nginx demo uses `X-Source-Region` (`us-east-1` or `eu-west-1`) for this routing and defaults to `us-east-1`.
 2. **Message source region owns message compute**: A message published to `orders.us-east-1` is consumed by the `us-east-1` app by default; a message published to `orders.eu-west-1` is consumed by the `eu-west-1` app by default.
-3. **Readers stay same-region**: Read paths should prefer the reader/data replica in the same region as the app handling the request or message.
-4. **Writer follows the sun, but remains single-writer**: Exactly one database is authoritative at a time. Both apps initially use `ACTIVE_WRITER_DB_HOST=postgres-us`. After verified EU promotion, both compute regions route future writes through `FAILOVER_WRITER_DB_HOST=postgres-eu`; restart reconciliation restores the correct route from authoritative topology instead of trusting a local flag alone.
+3. **Reader uses its home region**: Read paths are pinned to the database in the same region as the app handling the request or message: US app → `postgres-us`, EU app → `postgres-eu`. This route does not follow the writer during switchover.
+4. **Writer follows the sun, but remains single-writer**: Exactly one database is authoritative at a time, and every app writes to it regardless of compute region. Both apps initially use `ACTIVE_WRITER_DB_HOST=postgres-us`. After a fenced and verified EU switchover, both compute regions route future writes through `FAILOVER_WRITER_DB_HOST=postgres-eu`; restart reconciliation restores the route from authoritative topology instead of trusting a local flag alone.
 5. **DR switchover enables takeover**: A brother region should only take over queues after DR state says the source region is unavailable or switched over. Queue takeover is a DR lease, not steady-state load balancing.
 6. **Takeover auto-returns after 30 minutes**: If DR state does not recover first, the takeover listener is released after `QUEUE_TAKEOVER_MAX_DURATION_MS` (`1800000` ms). Normal ownership returns to the original source region after recovery.
 
@@ -167,7 +174,7 @@ This project uses the [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws
 
 2. **Bounded primary probe**: The failover monitor uses a small direct PostgreSQL pool rather than entering the wrapper's failover loop; connection, socket, statement, and wrapper failover timeouts are five seconds.
 
-3. **Connection Routing**: Writer connections initially go to `postgres-us`; reader connections remain regional. Promotion changes the application's effective writer route to `postgres-eu` without rebuilding the process.
+3. **Connection Routing**: Writer connections from both apps initially go to `postgres-us`; each reader connection stays in the app's home region. Promotion changes only the effective global writer route to `postgres-eu` without rebuilding the process; home-region read routes remain unchanged.
 
 4. **Failover Handling**:
    - Three consecutive connectivity failures trigger a promotion decision, but unfenced promotion is refused by default.
