@@ -6,6 +6,18 @@ START_STACK=false
 CLEANUP_STACK=false
 VERIFY_FAILOVER=false
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-180}"
+APP_US_CONTAINER="${APP_US_CONTAINER:-multiregion-app-us}"
+APP_EU_CONTAINER="${APP_EU_CONTAINER:-multiregion-app-eu}"
+US_DB_CONTAINER="${US_DB_CONTAINER:-multiregion-us}"
+EU_DB_CONTAINER="${EU_DB_CONTAINER:-multiregion-eu}"
+DB_TOOL_CONTAINER="${DB_TOOL_CONTAINER:-}"
+DB_USER="${DB_USER:-appuser}"
+DB_PASSWORD="${DB_PASSWORD:-apppass}"
+DB_NAME="${DB_NAME:-appdb}"
+US_DB_HOST="${US_DB_HOST:-}"
+US_DB_PORT="${US_DB_PORT:-5432}"
+EU_DB_HOST="${EU_DB_HOST:-}"
+EU_DB_PORT="${EU_DB_PORT:-5432}"
 
 usage() {
   cat <<USAGE
@@ -79,6 +91,30 @@ if [[ "$START_STACK" == "true" || "$CLEANUP_STACK" == "true" || "$VERIFY_FAILOVE
   require_cmd docker
 fi
 
+database_psql() {
+  local region="$1"
+  local sql="$2"
+  local container host port
+
+  if [[ "$region" == "us" ]]; then
+    container="$US_DB_CONTAINER"
+    host="$US_DB_HOST"
+    port="$US_DB_PORT"
+  else
+    container="$EU_DB_CONTAINER"
+    host="$EU_DB_HOST"
+    port="$EU_DB_PORT"
+  fi
+
+  if [[ -n "$DB_TOOL_CONTAINER" ]]; then
+    docker exec -e "PGPASSWORD=$DB_PASSWORD" "$DB_TOOL_CONTAINER" \
+      psql -h "$host" -p "$port" -U "$DB_USER" -d "$DB_NAME" -Atqc "$sql"
+  else
+    docker exec "$container" \
+      psql -U "$DB_USER" -d "$DB_NAME" -Atqc "$sql"
+  fi
+}
+
 cleanup() {
   local status=$?
   if [[ $status -ne 0 ]] && command -v docker >/dev/null 2>&1; then
@@ -96,7 +132,20 @@ if [[ "$START_STACK" == "true" ]]; then
   docker compose up -d --build
 fi
 
-"$PYTHON_BIN" - "$TIMEOUT_SECONDS" "$VERIFY_FAILOVER" <<'PY'
+"$PYTHON_BIN" - \
+  "$TIMEOUT_SECONDS" \
+  "$VERIFY_FAILOVER" \
+  "$APP_US_CONTAINER" \
+  "$DB_TOOL_CONTAINER" \
+  "$DB_USER" \
+  "$DB_PASSWORD" \
+  "$DB_NAME" \
+  "$US_DB_CONTAINER" \
+  "$US_DB_HOST" \
+  "$US_DB_PORT" \
+  "$EU_DB_CONTAINER" \
+  "$EU_DB_HOST" \
+  "$EU_DB_PORT" <<'PY'
 import json
 import subprocess
 import sys
@@ -106,6 +155,13 @@ import urllib.request
 
 timeout_seconds = float(sys.argv[1])
 verify_failover = sys.argv[2].lower() == "true"
+app_us_container = sys.argv[3]
+db_tool_container = sys.argv[4]
+db_user = sys.argv[5]
+db_password = sys.argv[6]
+db_name = sys.argv[7]
+us_db_container, us_db_host, us_db_port = sys.argv[8:11]
+eu_db_container, eu_db_host, eu_db_port = sys.argv[11:14]
 us_url = "http://localhost:8080"
 eu_url = "http://localhost:8081"
 router_url = "http://localhost:8000"
@@ -144,19 +200,32 @@ def wait_ready(root):
     raise SystemExit(f"{root} did not become ready within {timeout_seconds}s: {last_error}")
 
 
-def docker_psql(container, sql):
-    result = subprocess.run(
-        [
+def database_psql(region, sql):
+    if region == "us":
+        container, host, port = us_db_container, us_db_host, us_db_port
+    else:
+        container, host, port = eu_db_container, eu_db_host, eu_db_port
+
+    if db_tool_container:
+        command = [
+            "docker", "exec", "-e", f"PGPASSWORD={db_password}", db_tool_container,
+            "psql", "-h", host, "-p", port, "-U", db_user, "-d", db_name, "-Atqc", sql,
+        ]
+    else:
+        command = [
             "docker", "exec", container,
-            "psql", "-U", "appuser", "-d", "appdb", "-Atqc", sql,
-        ],
+            "psql", "-U", db_user, "-d", db_name, "-Atqc", sql,
+        ]
+
+    result = subprocess.run(
+        command,
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode != 0:
         raise AssertionError(
-            f"psql failed in {container}: {result.stderr.strip()}"
+            f"psql failed for {region}: {result.stderr.strip()}"
         )
     return result.stdout.strip()
 
@@ -202,12 +271,12 @@ if verify_failover:
     # Model the external control-plane fencing that real Aurora performs before
     # promoting a secondary. The local databases are independent, so this step
     # deliberately demotes US before the EU application is allowed to activate.
-    docker_psql(
-        "multiregion-us",
+    database_psql(
+        "us",
         "SELECT pg_catalog.set_writer_mode(false);",
     )
-    assert docker_psql(
-        "multiregion-us",
+    assert database_psql(
+        "us",
         "SELECT pg_catalog.aurora_is_writer();",
     ) == "f"
 
@@ -221,8 +290,8 @@ if verify_failover:
     _, eu_health = request(eu_url, "GET", "/health")
     assert eu_health["active"] is True, eu_health
 
-    assert docker_psql(
-        "multiregion-eu",
+    assert database_psql(
+        "eu",
         "SELECT pg_catalog.aurora_is_writer();",
     ) == "t"
 
@@ -243,12 +312,12 @@ if verify_failover:
         item["name"] != failover_product_name
         for item in us_after_failover
     ), us_after_failover
-    assert docker_psql(
-        "multiregion-eu",
+    assert database_psql(
+        "eu",
         f"SELECT count(*) FROM products WHERE name = '{failover_product_name}';",
     ) == "1"
-    assert docker_psql(
-        "multiregion-us",
+    assert database_psql(
+        "us",
         f"SELECT count(*) FROM products WHERE name = '{failover_product_name}';",
     ) == "0"
 
@@ -256,7 +325,7 @@ if verify_failover:
     # reconciled and its writes follow the new global writer instead of the
     # fenced US database.
     subprocess.run(
-        ["docker", "restart", "multiregion-app-us"],
+        ["docker", "restart", app_us_container],
         check=True,
         stdout=subprocess.DEVNULL,
     )
@@ -286,12 +355,12 @@ if verify_failover:
         item["name"] != old_primary_product_name
         for item in us_after_old_primary_write
     ), us_after_old_primary_write
-    assert docker_psql(
-        "multiregion-eu",
+    assert database_psql(
+        "eu",
         f"SELECT count(*) FROM products WHERE name = '{old_primary_product_name}';",
     ) == "1"
-    assert docker_psql(
-        "multiregion-us",
+    assert database_psql(
+        "us",
         f"SELECT count(*) FROM products WHERE name = '{old_primary_product_name}';",
     ) == "0"
 
@@ -319,10 +388,8 @@ print(json.dumps({
 PY
 
 if [[ "$VERIFY_FAILOVER" == "true" ]]; then
-  PRIMARY_WRITER="$(docker exec multiregion-us \
-    psql -U appuser -d appdb -Atqc "SELECT pg_catalog.aurora_is_writer();")"
-  LOCAL_WRITER="$(docker exec multiregion-eu \
-    psql -U appuser -d appdb -Atqc "SELECT pg_catalog.aurora_is_writer();")"
+  PRIMARY_WRITER="$(database_psql us "SELECT pg_catalog.aurora_is_writer();")"
+  LOCAL_WRITER="$(database_psql eu "SELECT pg_catalog.aurora_is_writer();")"
   if [[ "$PRIMARY_WRITER" != "f" ]]; then
     echo "postgres-us was not fenced before EU promotion" >&2
     exit 1
@@ -335,11 +402,20 @@ if [[ "$VERIFY_FAILOVER" == "true" ]]; then
 fi
 
 SIMULATE_BROTHER_APP_DOWN=true \
+BROTHER_APP_CONTAINER="$APP_EU_CONTAINER" \
 TIMEOUT_SECONDS="$TIMEOUT_SECONDS" \
 ./scripts/queue-takeover-acceptance.sh
 
 if [[ "$VERIFY_FAILOVER" == "true" ]]; then
-  "$PYTHON_BIN" - "$TIMEOUT_SECONDS" <<'PY'
+  "$PYTHON_BIN" - \
+    "$TIMEOUT_SECONDS" \
+    "$DB_TOOL_CONTAINER" \
+    "$DB_USER" \
+    "$DB_PASSWORD" \
+    "$DB_NAME" \
+    "$EU_DB_CONTAINER" \
+    "$EU_DB_HOST" \
+    "$EU_DB_PORT" <<'PY'
 import json
 import subprocess
 import sys
@@ -348,6 +424,13 @@ import urllib.error
 import urllib.request
 
 timeout_seconds = float(sys.argv[1])
+db_tool_container = sys.argv[2]
+db_user = sys.argv[3]
+db_password = sys.argv[4]
+db_name = sys.argv[5]
+eu_db_container = sys.argv[6]
+eu_db_host = sys.argv[7]
+eu_db_port = sys.argv[8]
 eu_url = "http://localhost:8081"
 us_url = "http://localhost:8080"
 
@@ -399,12 +482,22 @@ us_products = request(us_url, "GET", "/api/products")
 assert any(item["name"] == name for item in eu_products), eu_products
 assert all(item["name"] != name for item in us_products), us_products
 
-writer_state = subprocess.run(
-    [
-        "docker", "exec", "multiregion-eu",
-        "psql", "-U", "appuser", "-d", "appdb", "-Atqc",
+if db_tool_container:
+    psql_command = [
+        "docker", "exec", "-e", f"PGPASSWORD={db_password}", db_tool_container,
+        "psql", "-h", eu_db_host, "-p", eu_db_port,
+        "-U", db_user, "-d", db_name, "-Atqc",
         "SELECT pg_catalog.aurora_is_writer();",
-    ],
+    ]
+else:
+    psql_command = [
+        "docker", "exec", eu_db_container,
+        "psql", "-U", db_user, "-d", db_name, "-Atqc",
+        "SELECT pg_catalog.aurora_is_writer();",
+    ]
+
+writer_state = subprocess.run(
+    psql_command,
     capture_output=True,
     text=True,
     check=True,

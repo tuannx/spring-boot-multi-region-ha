@@ -58,6 +58,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
 - **Docker Compose**: Full stack runs locally with Docker
+- **Floci infrastructure profile**: AWS-compatible APIs provision RDS and Amazon MQ resources with real PostgreSQL and RabbitMQ data planes
 - **Nginx request routing**: Static source-region routing for the local demo
 - **Region-aware config**: Profile-based configuration per region
 
@@ -168,6 +169,53 @@ curl -s -X PUT http://localhost:8080/api/products/1 \
 # Delete product
 curl -s -X DELETE http://localhost:8080/api/products/3
 ```
+
+## Floci Infrastructure Environment
+
+The Floci profile validates the same application and failover flow while moving
+database and message-broker provisioning behind AWS APIs:
+
+```text
+Terraform AWS provider + AWS CLI
+        │
+        ▼
+        ├── Floci us-east-1 (:4566)
+        │       ├── RDS ─────► real PostgreSQL container
+        │       └── Amazon MQ ► real RabbitMQ container
+        └── Floci eu-west-1 (:4567)
+                ├── RDS ─────► real PostgreSQL container
+                └── Amazon MQ ► real RabbitMQ container
+```
+
+Prerequisites in addition to Docker are Terraform 1.8+ and AWS CLI v2. Run the
+complete provisioning and acceptance flow with:
+
+```bash
+./scripts/floci-e2e.sh --cleanup
+```
+
+The script:
+
+1. Starts one pinned `floci/floci:1.5.33` control plane per region so resources
+   and failure domains are isolated.
+2. Applies `infra/floci/terraform` against both Floci endpoints for two RDS
+   instances. The AWS provider is temporarily pinned to 5.x until
+   [floci-io/floci#1951](https://github.com/floci-io/floci/pull/1951) ships
+   support for the 6.x `dbi-resource-id` refresh filter.
+3. Provisions both Amazon MQ brokers through Floci's AWS API. This temporary
+   AWS CLI path avoids a Floci 1.5.33 `DescribeBroker` response incompatibility
+   also fixed by #1951; the brokers can return to Terraform after that release.
+4. Injects the local Aurora topology/fencing functions into the Floci-managed
+   PostgreSQL data planes.
+5. Connects both Spring applications to the endpoints returned by Floci.
+6. Runs the canonical fenced writer switchover, regional read/write assertions,
+   old-primary restart reconciliation, and RabbitMQ takeover/release flow.
+7. Captures control-plane and container evidence under `reports/floci/`.
+
+Use `--keep` instead of `--cleanup` to leave the verified environment running.
+The Floci environment proves AWS API/IaC compatibility and real local data-plane
+wiring. It does not claim to emulate Aurora Global Database replication, lag,
+quorum, or AWS networking; those still require an AWS acceptance environment.
 
 ## How Multi-Region Failover Works
 

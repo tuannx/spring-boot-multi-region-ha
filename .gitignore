@@ -74,10 +74,20 @@ replay_pid*
 test-results/
 test-output/
 reports/queue-takeover/
+reports/floci/
 *.test.js
 *.test.ts
 __pycache__/
 *.pyc
+
+# ============================================
+# Terraform / OpenTofu local state
+# ============================================
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
 
 # ============================================
 # Arcade architecture analysis

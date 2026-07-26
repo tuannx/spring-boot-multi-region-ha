@@ -147,16 +147,24 @@ services:
   rabbitmq-us:
     image: rabbitmq:3.13-management
     container_name: multiregion-rabbitmq-us
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - >-
+        printf '%s' "$${RABBITMQ_ERLANG_COOKIE}" > /var/lib/rabbitmq/.erlang.cookie;
+        chown rabbitmq:rabbitmq /var/lib/rabbitmq/.erlang.cookie;
+        chmod 0400 /var/lib/rabbitmq/.erlang.cookie;
+        exec /usr/local/bin/docker-entrypoint.sh rabbitmq-server
     environment:
       RABBITMQ_DEFAULT_USER: appuser
       RABBITMQ_DEFAULT_PASS: apppass
+      RABBITMQ_ERLANG_COOKIE: spring-ha-local-cookie
     ports:
       - "5672:5672"
       - "15672:15672"
     volumes:
       - rabbitmq-us-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -169,16 +177,24 @@ services:
   rabbitmq-eu:
     image: rabbitmq:3.13-management
     container_name: multiregion-rabbitmq-eu
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - >-
+        printf '%s' "$${RABBITMQ_ERLANG_COOKIE}" > /var/lib/rabbitmq/.erlang.cookie;
+        chown rabbitmq:rabbitmq /var/lib/rabbitmq/.erlang.cookie;
+        chmod 0400 /var/lib/rabbitmq/.erlang.cookie;
+        exec /usr/local/bin/docker-entrypoint.sh rabbitmq-server
     environment:
       RABBITMQ_DEFAULT_USER: appuser
       RABBITMQ_DEFAULT_PASS: apppass
+      RABBITMQ_ERLANG_COOKIE: spring-ha-local-cookie
     ports:
       - "5673:5672"
       - "15673:15672"
     volumes:
       - rabbitmq-eu-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 5s
       timeout: 5s
       retries: 20
