@@ -62,11 +62,10 @@ public class DatabaseConnections {
 
     @Bean
     public DataSource readDataSource() {
-        String localReaderHost = "secondary".equalsIgnoreCase(regionRole)
-                ? "postgres-eu"
-                : "postgres-us";
-        String url = awsWrapperUrl(localReaderHost, 5432);
-        log.info("ReadPool (home region): region={} host={}", awsRegion, localReaderHost);
+        String localReaderHost = resolvedLocalDbHost();
+        String url = awsWrapperUrl(localReaderHost, localDbPort);
+        log.info("ReadPool (home region): region={} host={} port={}",
+                awsRegion, localReaderHost, localDbPort);
         return wrapperDataSource(url, "ReadPool-" + awsRegion, 20, true);
     }
 

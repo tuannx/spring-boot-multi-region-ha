@@ -27,6 +27,17 @@ class DatabaseConnectionsTest {
     }
 
     @Test
+    void regionalReadPoolTargetsConfiguredLocalDatabaseThroughAwsWrapper() {
+        DatabaseConnections config = config("eu-west-1", "secondary", "eu-local-db", 6543);
+
+        try (HikariDataSource dataSource = (HikariDataSource) config.readDataSource()) {
+            assertThat(dataSource.getJdbcUrl())
+                    .isEqualTo("jdbc:aws-wrapper:postgresql://eu-local-db:6543/appdb");
+            assertThat(dataSource.isReadOnly()).isTrue();
+        }
+    }
+
+    @Test
     void secondaryLocalAdminPoolFallsBackToLocalEuDatabase() {
         DatabaseConnections config = config("eu-west-1", "secondary", "  ", 5432);
 

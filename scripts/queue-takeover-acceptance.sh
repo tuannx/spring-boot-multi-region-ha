@@ -11,6 +11,10 @@ BROTHER_APP_CONTAINER="${BROTHER_APP_CONTAINER:-multiregion-app-eu}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-20}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-0.25}"
 REPORT_DIR="${REPORT_DIR:-reports/queue-takeover}"
+RABBITMQ_US_MANAGEMENT_URL="${RABBITMQ_US_MANAGEMENT_URL:-http://localhost:15672}"
+RABBITMQ_EU_MANAGEMENT_URL="${RABBITMQ_EU_MANAGEMENT_URL:-http://localhost:15673}"
+RABBITMQ_USER="${RABBITMQ_USER:-appuser}"
+RABBITMQ_PASS="${RABBITMQ_PASS:-apppass}"
 START_STACK=false
 
 usage() {
@@ -92,7 +96,22 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 REPORT_JSON="$REPORT_DIR/queue-takeover-$STAMP.json"
 REPORT_MD="$REPORT_DIR/queue-takeover-$STAMP.md"
 
-"$PYTHON_BIN" - "$BASE_URL" "$BROTHER_BASE_URL" "$QUEUE_NAME" "$LOCAL_REGION" "$BROTHER_REGION" "$SIMULATE_BROTHER_APP_DOWN" "$BROTHER_APP_CONTAINER" "$TIMEOUT_SECONDS" "$POLL_INTERVAL_SECONDS" "$REPORT_JSON" "$REPORT_MD" <<'PY'
+"$PYTHON_BIN" - \
+  "$BASE_URL" \
+  "$BROTHER_BASE_URL" \
+  "$QUEUE_NAME" \
+  "$LOCAL_REGION" \
+  "$BROTHER_REGION" \
+  "$SIMULATE_BROTHER_APP_DOWN" \
+  "$BROTHER_APP_CONTAINER" \
+  "$TIMEOUT_SECONDS" \
+  "$POLL_INTERVAL_SECONDS" \
+  "$REPORT_JSON" \
+  "$REPORT_MD" \
+  "$RABBITMQ_US_MANAGEMENT_URL" \
+  "$RABBITMQ_EU_MANAGEMENT_URL" \
+  "$RABBITMQ_USER" \
+  "$RABBITMQ_PASS" <<'PY'
 import json
 import http.client
 import subprocess
@@ -112,6 +131,10 @@ timeout_seconds = float(sys.argv[8])
 poll_interval_seconds = float(sys.argv[9])
 report_json = sys.argv[10]
 report_md = sys.argv[11]
+rabbitmq_us_management_url = sys.argv[12]
+rabbitmq_eu_management_url = sys.argv[13]
+rabbitmq_user = sys.argv[14]
+rabbitmq_password = sys.argv[15]
 
 events = []
 brother_app_stopped = False
@@ -221,8 +244,12 @@ def wait_until(label, predicate):
     }
 
 def publish_rabbitmq_message(region, payload):
-    management_port = 15672 if region == "us-east-1" else 15673
-    publish_url = f"http://localhost:{management_port}/api/exchanges/%2F/amq.default/publish"
+    management_url = (
+        rabbitmq_us_management_url
+        if region == "us-east-1"
+        else rabbitmq_eu_management_url
+    )
+    publish_url = management_url.rstrip("/") + "/api/exchanges/%2F/amq.default/publish"
     physical_queue = f"{queue_name}.{region}"
     body = json.dumps({
         "properties": {},
@@ -232,9 +259,14 @@ def publish_rabbitmq_message(region, payload):
     }).encode("utf-8")
     req = urllib.request.Request(publish_url, data=body, method="POST")
     req.add_header("Content-Type", "application/json")
-    req.add_header("Authorization", "Basic " + base64.b64encode(b"appuser:apppass").decode("ascii"))
+    credentials = f"{rabbitmq_user}:{rabbitmq_password}".encode("utf-8")
+    req.add_header("Authorization", "Basic " + base64.b64encode(credentials).decode("ascii"))
     try:
         with urllib.request.urlopen(req, timeout=15) as response:
+            response_body = response.read().decode("utf-8")
+            result = json.loads(response_body) if response_body else {}
+            if result.get("routed") is not True:
+                raise RuntimeError(f"RabbitMQ did not route message: {result}")
             events.append({
                 "at": now_iso(),
                 "method": "POST",
@@ -252,6 +284,7 @@ def publish_rabbitmq_message(region, payload):
             "queue": physical_queue,
             "error": str(exc)
         })
+        raise
 
 def docker_available():
     return subprocess.run(
