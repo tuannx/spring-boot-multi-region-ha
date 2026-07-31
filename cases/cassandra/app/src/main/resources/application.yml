@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: multiregion-cassandra-app
+  threads:
+    virtual:
+      enabled: true
   cassandra:
     keyspace-name: multiregion
     contact-points: ${CASSANDRA_CONTACT_POINTS:localhost:9042}
@@ -27,6 +30,13 @@ management:
   endpoint:
     health:
       show-details: always
+  info:
+    java:
+      enabled: true
+    os:
+      enabled: true
+    process:
+      enabled: true
 
 info:
   app:
