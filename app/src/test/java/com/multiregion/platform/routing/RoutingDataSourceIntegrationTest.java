@@ -9,8 +9,10 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RoutingDataSourceIntegrationTest {
 
@@ -83,6 +85,25 @@ class RoutingDataSourceIntegrationTest {
         assertThat(selectedPool).isEqualTo("reader");
     }
 
+    @Test
+    void nestedRouteRestoresTheLexicallyScopedOuterRoute() {
+        List<String> selectedPools = dataRoute.read(() -> List.of(
+                selectedPool(),
+                dataRoute.write(this::selectedPool),
+                selectedPool()));
+
+        assertThat(selectedPools).containsExactly("reader", "writer", "reader");
+    }
+
+    @Test
+    void failedOperationDoesNotLeakItsRoute() {
+        assertThatThrownBy(() -> dataRoute.read(() -> {
+            throw new IllegalStateException("simulated failure");
+        })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(selectedPool()).isEqualTo("writer");
+    }
+
     private TransactionTemplate transactionTemplate(boolean readOnly) {
         TransactionTemplate template = new TransactionTemplate(
                 new DataSourceTransactionManager(routingDataSource));
@@ -93,6 +114,11 @@ class RoutingDataSourceIntegrationTest {
     private DataSource dataSource(String name) {
         return new DriverManagerDataSource(
                 "jdbc:h2:mem:routing_" + name + ";DB_CLOSE_DELAY=-1", "sa", "");
+    }
+
+    private String selectedPool() {
+        return new JdbcTemplate(routingDataSource)
+                .queryForObject("SELECT pool_name FROM routing_probe", String.class);
     }
 
     private void initialize(DataSource dataSource, String poolName) {

@@ -1,16 +1,18 @@
-FROM gradle:8-jdk17 AS builder
+FROM gradle:9.4.1-jdk26 AS gradle-distribution
+
+FROM amazoncorretto:26.0.2-alpine AS builder
+COPY --from=gradle-distribution /opt/gradle /opt/gradle
+ENV PATH="/opt/gradle/bin:${PATH}"
 WORKDIR /app
 COPY build.gradle.kts settings.gradle.kts ./
 COPY src src/
 RUN gradle clean bootJar --no-daemon --stacktrace
 
-FROM eclipse-temurin:17-jre
+FROM amazoncorretto:26.0.2-alpine
 WORKDIR /app
-RUN groupadd --system spring \
-    && useradd --system --gid spring spring \
-    && apt-get update \
-    && apt-get install --yes --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN addgroup -S spring \
+    && adduser -S -G spring spring \
+    && apk add --no-cache curl
 COPY --from=builder /app/build/libs/*.jar app.jar
 RUN chown spring:spring app.jar
 USER spring

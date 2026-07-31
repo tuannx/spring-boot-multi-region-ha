@@ -20,20 +20,10 @@ public class RoutingProductDataRoute implements ProductDataRoute {
 
     @Override
     public void write(Runnable operation) {
-        RoutingDataSource.routeTo(RoutingDataSource.WRITER);
-        try {
-            operation.run();
-        } finally {
-            RoutingDataSource.clearRoute();
-        }
+        RoutingDataSource.withRoute(RoutingDataSource.WRITER, operation);
     }
 
     private <T> T routed(String target, Supplier<T> operation) {
-        RoutingDataSource.routeTo(target);
-        try {
-            return operation.get();
-        } finally {
-            RoutingDataSource.clearRoute();
-        }
+        return RoutingDataSource.withRoute(target, operation);
     }
 }

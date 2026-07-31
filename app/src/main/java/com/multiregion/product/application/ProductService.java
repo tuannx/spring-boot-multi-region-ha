@@ -8,8 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessResourceException;
-import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Retryable;
+import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,18 +64,20 @@ public class ProductService {
     /**
      * Save a product with retry for HA/DR failover resilience.
      * <p>
-     * Retries up to 5 times with exponential backoff (500ms → 1s → 2s → 4s → 4s)
+     * Performs up to 5 total attempts with exponential backoff (500ms → 1s → 2s → 4s)
      * when the underlying connection fails during writer failover.
-     * Total max wait: ~11.5s, covering typical failover windows (3-10s).
+     * Total max wait: ~7.5s.
      */
     @Retryable(
-        retryFor = {
+        includes = {
             DataAccessResourceFailureException.class,
             TransientDataAccessResourceException.class,
             SQLTransientConnectionException.class
         },
-        maxAttempts = 5,
-        backoff = @Backoff(delay = 500, multiplier = 2, maxDelay = 4000)
+        maxRetries = 4,
+        delay = 500,
+        multiplier = 2,
+        maxDelay = 4000
     )
     public Product save(Product product) {
         return dataRoute.write(() -> {
@@ -93,13 +94,15 @@ public class ProductService {
      * Same retry policy as {@link #save(Product)}.
      */
     @Retryable(
-        retryFor = {
+        includes = {
             DataAccessResourceFailureException.class,
             TransientDataAccessResourceException.class,
             SQLTransientConnectionException.class
         },
-        maxAttempts = 5,
-        backoff = @Backoff(delay = 500, multiplier = 2, maxDelay = 4000)
+        maxRetries = 4,
+        delay = 500,
+        multiplier = 2,
+        maxDelay = 4000
     )
     public void deleteById(Long id) {
         dataRoute.write(() -> productCatalog.deleteById(id));

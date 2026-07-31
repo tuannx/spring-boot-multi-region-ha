@@ -1,10 +1,10 @@
 package com.multiregion.platform.config;
 
 import org.springframework.context.annotation.Configuration;
-import org.springframework.retry.annotation.EnableRetry;
+import org.springframework.resilience.annotation.EnableResilientMethods;
 
 /**
- * Enables Spring Retry for HA/DR failover resilience.
+ * Enables Spring Framework retry for HA/DR failover resilience.
  * <p>
  * During failover (writer node crash), the AWS JDBC Wrapper failover2 plugin
  * detects the broken connection and reconnects to the new writer. This takes
@@ -17,8 +17,8 @@ import org.springframework.retry.annotation.EnableRetry;
  * covering the failover window without returning errors to the client.
  */
 @Configuration
-@EnableRetry
+@EnableResilientMethods
 public class RetryConfig {
-    // Marker class — @EnableRetry activates Spring AOP-based retry for all
+    // Marker class — @EnableResilientMethods activates Spring's core retry for all
     // @Retryable beans in this context.
 }

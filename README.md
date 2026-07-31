@@ -1,6 +1,7 @@
 # Spring Boot Multi-Region High Availability
 
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.3-brightgreen)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.0-brightgreen)](https://spring.io/projects/spring-boot)
+[![Java](https://img.shields.io/badge/Java-26.0.2-orange)](https://jdk.java.net/26/)
 [![AWS JDBC Driver](https://img.shields.io/badge/AWS%20JDBC%20Driver-4.0.1-orange)](https://github.com/awslabs/aws-advanced-jdbc-wrapper)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
@@ -67,7 +68,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 ### Prerequisites
 
 - Docker & Docker Compose v2
-- Java 17+ (for local development)
+- Java 26.0.2 (for local development)
 - curl / httpie (for testing)
 
 ### Available cases
@@ -527,20 +528,20 @@ createdb -U appuser appdb
 SPRING_PROFILES_ACTIVE=region-us \
 DB_HOST=localhost DB_PORT=5432 DB_NAME=appdb \
 DB_USER=appuser DB_PASS=apppass \
-./gradlew bootRun
+gradle bootRun
 
 # Start EU region app (separate terminal)
 SPRING_PROFILES_ACTIVE=region-eu \
 DB_HOST=localhost DB_PORT=5433 DB_NAME=appdb \
 DB_USER=appuser DB_PASS=apppass \
-./gradlew bootRun
+gradle bootRun
 ```
 
 ### Building the JAR
 
 ```bash
 cd app
-./gradlew build -x test
+gradle build -x test
 java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
   --spring.profiles.active=region-us
 ```

@@ -233,6 +233,14 @@ def database_psql(region, sql):
 wait_ready(us_url)
 wait_ready(eu_url)
 
+_, runtime_info = request(us_url, "GET", "/actuator/info")
+for contributor in ("build", "java", "os", "process"):
+    assert contributor in runtime_info, runtime_info
+java_version = str(runtime_info["java"].get("version", ""))
+assert java_version == "26.0.2", runtime_info["java"]
+for process_field in ("currentTime", "timezone", "locale", "workingDirectory"):
+    assert process_field in runtime_info["process"], runtime_info["process"]
+
 _, us_products = request(us_url, "GET", "/api/products")
 _, eu_products = request(eu_url, "GET", "/api/products")
 assert us_products and all(item["region"] == "us-east-1" for item in us_products), us_products
@@ -377,6 +385,9 @@ if verify_failover:
 
 print(json.dumps({
     "status": "PASS",
+    "javaVersion": java_version,
+    "buildVersion": runtime_info["build"]["version"],
+    "processInfoVerified": True,
     "usReadPoolProducts": len(us_products),
     "euReadPoolProducts": len(eu_products),
     "writerRoutedProductId": product_id,

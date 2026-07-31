@@ -6,6 +6,7 @@ import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 /**
  * Routes reads to the regional reader and writes to the currently active
@@ -20,16 +21,16 @@ public class RoutingDataSource extends AbstractRoutingDataSource {
     public static final String READER = "reader";
     public static final String PROMOTED_WRITER = "promoted-writer";
 
-    private static final ThreadLocal<String> contextHolder = new ThreadLocal<>();
+    private static final ScopedValue<String> ROUTE = ScopedValue.newInstance();
 
     private final AtomicReference<String> activeWriter = new AtomicReference<>(WRITER);
 
-    public static void routeTo(String target) {
-        contextHolder.set(target);
+    public static <T> T withRoute(String target, Supplier<T> operation) {
+        return ScopedValue.where(ROUTE, target).call(operation::get);
     }
 
-    public static void clearRoute() {
-        contextHolder.remove();
+    public static void withRoute(String target, Runnable operation) {
+        ScopedValue.where(ROUTE, target).run(operation);
     }
 
     public void activatePromotedWriter() {
@@ -52,7 +53,7 @@ public class RoutingDataSource extends AbstractRoutingDataSource {
 
     @Override
     protected Object determineCurrentLookupKey() {
-        String explicit = contextHolder.get();
+        String explicit = ROUTE.isBound() ? ROUTE.get() : null;
         if (explicit != null) {
             String resolved = resolveWriter(explicit);
             log.debug("Routing connection to explicit {} pool (resolved to {})", explicit, resolved);
