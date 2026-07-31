@@ -7,6 +7,11 @@
 
 A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** `failover2` plugin. This project simulates Aurora topology and control-plane state with local PostgreSQL instances, including bounded failover detection, runtime writer routing, nginx request routing, and region-aware health monitoring.
 
+The repository also includes an independent
+[`Cassandra multi-region case`](cases/cassandra/README.md) for workloads that
+need active-active regional writes rather than Aurora's fenced single-writer
+model.
+
 ```text
                          ┌─────────────────────────────────────────────┐
                          │           nginx-router (port 8000)          │
@@ -63,6 +68,17 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 - Docker & Docker Compose v2
 - Java 17+ (for local development)
 - curl / httpie (for testing)
+
+### Available cases
+
+| Case | Write model | Local consistency | Acceptance |
+|------|-------------|-------------------|------------|
+| Aurora/PostgreSQL (root stack) | Fenced single global writer | Writer authority + home-region reads | `./scripts/e2e-acceptance.sh --start --cleanup --verify-failover` |
+| [Cassandra](cases/cassandra/README.md) | Active-active across two datacenters | `LOCAL_QUORUM`, RF=3 per DC | `./scripts/cassandra-e2e.sh --start --cleanup` |
+
+The cases are separate because their failure semantics are different. The
+Cassandra flow moves traffic to the surviving application/datacenter during a
+complete regional outage; it does not reuse the Aurora writer-promotion code.
 
 ### 1. Clone and start
 
@@ -483,6 +499,7 @@ java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
 
 ## Related Resources
 
+- [Cassandra Multi-Region Case](cases/cassandra/README.md) — runnable two-datacenter active-active topology with regional traffic failover
 - [RPO Failure Modes Reference](docs/rpo-failure-modes-reference.md) — 13 warm-standby, active-active, and cross-cutting RPO failure scenarios with detection queries and Spring Boot remediation patterns
 - [Test Scenarios](docs/test-scenarios.md) — Timeline-based failover and k6 validation scenarios for the current local stack
 - [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws-advanced-jdbc-wrapper) — The official AWS JDBC wrapper with Aurora failover support

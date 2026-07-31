@@ -1,0 +1,35 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: multiregion-cassandra-app
+  cassandra:
+    keyspace-name: multiregion
+    contact-points: ${CASSANDRA_CONTACT_POINTS:localhost:9042}
+    local-datacenter: ${CASSANDRA_LOCAL_DATACENTER:us-east-1}
+    schema-action: none
+    request:
+      consistency: LOCAL_QUORUM
+      serial-consistency: LOCAL_SERIAL
+      timeout: 5s
+
+app:
+  region:
+    name: ${APP_REGION:us-east-1}
+    local-datacenter: ${CASSANDRA_LOCAL_DATACENTER:us-east-1}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+info:
+  app:
+    name: Multi-Region Cassandra Case
+    consistency: LOCAL_QUORUM
+    replication: NetworkTopologyStrategy

@@ -34,7 +34,12 @@ jobs:
           gradle-version: "8.12"
 
       - name: Run unit, integration, and architecture tests
-        run: gradle -p app clean test --no-daemon
+        run: |
+          gradle -p app clean test --no-daemon
+          gradle -p cases/cassandra/app clean test --no-daemon
+
+      - name: Validate Cassandra case Compose model
+        run: docker compose -f cases/cassandra/docker-compose.yml config --quiet
 
       - name: Run Docker end-to-end acceptance
         run: ./scripts/e2e-acceptance.sh --start --cleanup --verify-failover
