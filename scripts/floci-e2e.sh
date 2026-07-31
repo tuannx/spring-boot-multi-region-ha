@@ -215,7 +215,7 @@ terraform_in_floci apply \
   -var="floci_eu_endpoint=$FLOCI_EU_ENDPOINT" \
   -var="database_password=$FLOCI_DATABASE_PASSWORD"
 
-# Floci 1.5.33 exposes RabbitMQ users from DescribeBroker, which makes the
+# Floci 1.5.34 exposes RabbitMQ users from DescribeBroker, which makes the
 # Terraform AWS provider call the unsupported standalone DescribeUser API.
 # Provision through the same AWS-compatible endpoint until floci-io/floci#1951
 # is released, then move these brokers back into the Terraform module.

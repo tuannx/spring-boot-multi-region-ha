@@ -196,14 +196,14 @@ complete provisioning and acceptance flow with:
 
 The script:
 
-1. Starts one pinned `floci/floci:1.5.33` control plane per region so resources
+1. Starts one pinned `floci/floci:1.5.34` control plane per region so resources
    and failure domains are isolated.
 2. Applies `infra/floci/terraform` against both Floci endpoints for two RDS
    instances. The AWS provider is temporarily pinned to 5.x until
    [floci-io/floci#1951](https://github.com/floci-io/floci/pull/1951) ships
    support for the 6.x `dbi-resource-id` refresh filter.
 3. Provisions both Amazon MQ brokers through Floci's AWS API. This temporary
-   AWS CLI path avoids a Floci 1.5.33 `DescribeBroker` response incompatibility
+   AWS CLI path avoids a Floci 1.5.34 `DescribeBroker` response incompatibility
    also fixed by #1951; the brokers can return to Terraform after that release.
 4. Injects the local Aurora topology/fencing functions into the Floci-managed
    PostgreSQL data planes.
