@@ -28,7 +28,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-amqp")
 
     // PostgreSQL driver
-    implementation("org.postgresql:postgresql:42.7.8")
+    implementation("org.postgresql:postgresql:42.7.13")
 
     // AWS Advanced JDBC Wrapper with Global Database failover
     implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.0.1")
