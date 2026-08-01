@@ -46,7 +46,7 @@ jobs:
 
       - name: Upload acceptance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: acceptance-evidence
           path: reports/queue-takeover/
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload Floci acceptance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: floci-acceptance-evidence
           path: |
