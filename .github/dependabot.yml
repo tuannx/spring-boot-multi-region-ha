@@ -1,11 +1,41 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
 version: 2
+
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/app" # Location of package manifests
+  # Spring Boot applications.
+  - package-ecosystem: "gradle"
+    directories:
+      - "/app"
+      - "/cases/cassandra/app"
+    schedule:
+      interval: "weekly"
+
+  # Base images used by each application Dockerfile.
+  - package-ecosystem: "docker"
+    directories:
+      - "/app"
+      - "/cases/cassandra/app"
+    schedule:
+      interval: "weekly"
+
+  # Service images used by the root and Cassandra Compose stacks.
+  - package-ecosystem: "docker-compose"
+    directories:
+      - "/"
+      - "/cases/cassandra"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # These images are built locally by the Compose stacks, not published.
+      - dependency-name: "multiregion-*"
+
+  # Floci infrastructure providers.
+  - package-ecosystem: "terraform"
+    directory: "/infra/floci/terraform"
+    schedule:
+      interval: "weekly"
+
+  # Actions in .github/workflows are discovered from the repository root.
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
       interval: "weekly"
