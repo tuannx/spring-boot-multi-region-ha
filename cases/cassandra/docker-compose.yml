@@ -7,7 +7,7 @@ x-cassandra-environment: &cassandra-environment
   HEAP_NEWSIZE: 128M
 
 x-cassandra-service: &cassandra-service
-  image: cassandra:5.0.5
+  image: cassandra:5.0.8
   restart: unless-stopped
   healthcheck:
     test:
@@ -107,7 +107,7 @@ services:
       - cassandra-eu-3-data:/var/lib/cassandra
 
   schema-init:
-    image: cassandra:5.0.5
+    image: cassandra:5.0.8
     container_name: multiregion-cassandra-schema-init
     restart: "no"
     depends_on:
