@@ -3,7 +3,7 @@ services:
   # REGION 1: us-east-1 (Primary Writer)
   # ============================================
   postgres-us:
-    image: postgres:16
+    image: postgres:18
     container_name: multiregion-us
     environment:
       POSTGRES_DB: appdb
@@ -74,7 +74,7 @@ services:
   # REGION 2: eu-west-1 (Secondary / DR)
   # ============================================
   postgres-eu:
-    image: postgres:16
+    image: postgres:18
     container_name: multiregion-eu
     environment:
       POSTGRES_DB: appdb
