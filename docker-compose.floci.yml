@@ -34,7 +34,7 @@ services:
       - floci-net
 
   postgres-us:
-    image: alpine/socat:1.8.0.3
+    image: alpine/socat:1.8.1.1
     container_name: spring-ha-floci-postgres-us
     command:
       - -d
@@ -47,7 +47,7 @@ services:
       - floci-net
 
   postgres-eu:
-    image: alpine/socat:1.8.0.3
+    image: alpine/socat:1.8.1.1
     container_name: spring-ha-floci-postgres-eu
     command:
       - -d
@@ -60,7 +60,7 @@ services:
       - floci-net
 
   rabbitmq-us:
-    image: alpine/socat:1.8.0.3
+    image: alpine/socat:1.8.1.1
     container_name: spring-ha-floci-rabbitmq-us
     entrypoint:
       - /bin/sh
@@ -80,7 +80,7 @@ services:
       - floci-net
 
   rabbitmq-eu:
-    image: alpine/socat:1.8.0.3
+    image: alpine/socat:1.8.1.1
     container_name: spring-ha-floci-rabbitmq-eu
     entrypoint:
       - /bin/sh
