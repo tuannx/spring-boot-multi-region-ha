@@ -145,7 +145,7 @@ services:
   # REGION 1 QUEUE: RabbitMQ for us-east-1
   # ============================================
   rabbitmq-us:
-    image: rabbitmq:3.13-management
+    image: rabbitmq:4.3-management
     container_name: multiregion-rabbitmq-us
     entrypoint: ["/bin/bash", "-ec"]
     command:
@@ -175,7 +175,7 @@ services:
   # REGION 2 QUEUE: RabbitMQ for eu-west-1
   # ============================================
   rabbitmq-eu:
-    image: rabbitmq:3.13-management
+    image: rabbitmq:4.3-management
     container_name: multiregion-rabbitmq-eu
     entrypoint: ["/bin/bash", "-ec"]
     command:
