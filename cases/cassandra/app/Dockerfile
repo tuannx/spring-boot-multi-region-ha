@@ -1,4 +1,4 @@
-FROM gradle:9.4.1-jdk26 AS gradle-distribution
+FROM gradle:9.7.0-jdk26 AS gradle-distribution
 
 FROM amazoncorretto:26.0.2-alpine AS builder
 COPY --from=gradle-distribution /opt/gradle /opt/gradle
