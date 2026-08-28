@@ -31,7 +31,7 @@ dependencies {
     implementation("org.postgresql:postgresql:42.7.8")
 
     // AWS Advanced JDBC Wrapper with Global Database failover
-    implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.0.1")
+    implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.4.0")
 
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
