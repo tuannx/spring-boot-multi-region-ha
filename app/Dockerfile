@@ -1,5 +1,5 @@
 # Build with Gradle 9.4.1 on the latest Java 26 patch release.
-FROM gradle:9.4.1-jdk26 AS gradle-distribution
+FROM gradle:9.7.1-jdk26 AS gradle-distribution
 
 FROM amazoncorretto:26.0.2-alpine AS builder
 COPY --from=gradle-distribution /opt/gradle /opt/gradle
