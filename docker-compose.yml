@@ -59,7 +59,7 @@ services:
       RABBITMQ_USER: appuser
       RABBITMQ_PASS: apppass
     ports:
-      - "8080:8080"
+      - "${APP_US_HOST_PORT:-8080}:8080"
     depends_on:
       postgres-us:
         condition: service_healthy
@@ -130,7 +130,7 @@ services:
       RABBITMQ_USER: appuser
       RABBITMQ_PASS: apppass
     ports:
-      - "8081:8081"
+      - "${APP_EU_HOST_PORT:-8081}:8081"
     depends_on:
       postgres-eu:
         condition: service_healthy
@@ -208,7 +208,7 @@ services:
     image: nginx:alpine
     container_name: multiregion-router
     ports:
-      - "8000:80"
+      - "${ROUTER_HOST_PORT:-8000}:80"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:

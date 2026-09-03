@@ -59,6 +59,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
 - **Docker Compose**: Full stack runs locally with Docker
+- **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions to a self-hosted SigNoz Docker stack
 - **Floci infrastructure profile**: AWS-compatible APIs provision RDS and Amazon MQ resources with real PostgreSQL and RabbitMQ data planes
 - **Nginx request routing**: Static source-region routing for the local demo
 - **Region-aware config**: Profile-based configuration per region
@@ -70,6 +71,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 - Docker & Docker Compose v2
 - Java 26.0.2 (for local development)
 - curl / httpie (for testing)
+- `foundryctl` (only for the optional SigNoz observability stack)
 
 ### Available cases
 
@@ -170,6 +172,62 @@ curl -s -X PUT http://localhost:8080/api/products/1 \
 # Delete product
 curl -s -X DELETE http://localhost:8080/api/products/3
 ```
+
+### 5. Run with OpenTelemetry + SigNoz
+
+The default Compose flow remains lightweight. To run the two application
+regions with the OpenTelemetry Java agent and a local SigNoz Docker stack, use
+the optional workflow below:
+
+```bash
+# Install foundryctl once using the official SigNoz Docker guide:
+# https://signoz.io/docs/install/docker/
+./scripts/observability-up.sh
+./scripts/observability-verify.sh
+```
+
+Open the SigNoz UI at <http://localhost:9090>. The application containers send
+OTLP gRPC to `localhost:4317`; the overlay keeps the same logical service name
+(`multiregion-app`) and adds `cloud.region` plus `service.instance.id` so US
+and EU telemetry can be compared in the same service. Generate a little
+traffic with the health, product, and Actuator requests above, then inspect
+Services, Traces, Metrics, and Logs in SigNoz. See the complete
+[OpenTelemetry/SigNoz guide](docs/observability.md) for lifecycle and cleanup
+commands. If port `8080` is already in use, choose another host port while
+keeping the application port inside the container unchanged:
+
+```bash
+APP_US_HOST_PORT=18080 ./scripts/observability-up.sh
+APP_US_HOST_PORT=18080 ./scripts/observability-verify.sh
+```
+
+## Observability proof
+
+The screenshots below were captured from the local runtime on 2026-09-02 after
+starting the SigNoz workflow with the local `foundryctl` binary and
+`APP_US_HOST_PORT=18080`, sending HTTP/JDBC traffic, and checking both region
+health endpoints. They are repository assets, so the proof remains reviewable
+alongside the integration:
+
+![SigNoz Services showing the multiregion application](docs/assets/observability/signoz-services.png)
+
+![SigNoz Traces showing instrumented Spring Boot requests](docs/assets/observability/signoz-traces.png)
+
+![SigNoz Metrics showing JVM and HTTP telemetry](docs/assets/observability/signoz-metrics.png)
+
+Runtime verification command:
+
+```bash
+APP_US_HOST_PORT=18080 ./scripts/observability-verify.sh
+```
+
+Observed during that run: SigNoz health returned `{"status":"ok"}`; US and EU
+returned `{"status":"UP"}` with `dbConnected:true`; SigNoz Services showed
+`multiregion-app`; Traces showed `GET /actuator/health` with HTTP 200; and
+Metrics showed `jvm.memory.used` samples from the JVM agent. This proves local
+collector/UI and application reachability. It does not claim production-grade
+cross-region telemetry durability or a production SigNoz deployment; the stack
+is intentionally a single-node local observability environment.
 
 ## Floci Infrastructure Environment
 
