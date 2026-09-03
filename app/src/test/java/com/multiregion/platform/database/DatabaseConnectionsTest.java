@@ -5,7 +5,6 @@ import com.multiregion.platform.routing.RoutingDataSources;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.datasource.LazyConnectionDataSourceProxy;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.sql.DataSource;
 
@@ -117,18 +116,17 @@ class DatabaseConnectionsTest {
             String regionRole,
             String localDbHost,
             int localDbPort) {
-        DatabaseConnections config = new DatabaseConnections();
-        ReflectionTestUtils.setField(config, "dbUser", "appuser");
-        ReflectionTestUtils.setField(config, "dbPass", "apppass");
-        ReflectionTestUtils.setField(config, "awsRegion", awsRegion);
-        ReflectionTestUtils.setField(config, "regionRole", regionRole);
-        ReflectionTestUtils.setField(config, "activeWriterDbHost", "primary-db");
-        ReflectionTestUtils.setField(config, "activeWriterDbPort", 6432);
-        ReflectionTestUtils.setField(config, "localDbHost", localDbHost);
-        ReflectionTestUtils.setField(config, "localDbPort", localDbPort);
-        ReflectionTestUtils.setField(config, "failoverWriterDbHost", "promoted-db");
-        ReflectionTestUtils.setField(config, "failoverWriterDbPort", 7432);
-        ReflectionTestUtils.setField(config, "dbName", "appdb");
-        return config;
+        return new DatabaseConnections(
+                "appuser",
+                "apppass",
+                awsRegion,
+                regionRole,
+                "primary-db",
+                6432,
+                localDbHost,
+                localDbPort,
+                "promoted-db",
+                7432,
+                "appdb");
     }
 }

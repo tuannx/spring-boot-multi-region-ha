@@ -49,7 +49,7 @@ pkl {
         register("configClasses") {
             generateGetters.set(true)
             generateSpringBootConfig.set(true)
-            sourceModules.set(files("src/main/resources/pkl/PklMultiRegionConfig.pkl"))
+            sourceModules.set(files("src/main/resources/pkl/PklApplicationConfig.pkl"))
         }
     }
 }

@@ -3,9 +3,9 @@ package com.multiregion.product.application;
 import com.multiregion.product.domain.Product;
 import com.multiregion.product.port.ProductCatalog;
 import com.multiregion.product.port.ProductDataRoute;
+import com.multiregion.product.port.ProductRegionProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.resilience.annotation.Retryable;
@@ -45,10 +45,10 @@ public class ProductService {
     public ProductService(
             ProductCatalog productCatalog,
             ProductDataRoute dataRoute,
-            @Value("${AWS_REGION:us-east-1}") String awsRegion) {
+            ProductRegionProvider regionProvider) {
         this.productCatalog = productCatalog;
         this.dataRoute = dataRoute;
-        this.awsRegion = awsRegion;
+        this.awsRegion = regionProvider.region();
     }
 
     @Transactional(readOnly = true)

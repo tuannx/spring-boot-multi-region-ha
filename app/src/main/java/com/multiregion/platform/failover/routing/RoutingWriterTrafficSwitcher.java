@@ -1,9 +1,9 @@
 package com.multiregion.platform.failover.routing;
 
+import com.multiregion.platform.config.MultiRegionConfig;
 import com.multiregion.platform.routing.RoutingDataSource;
 import com.multiregion.platform.failover.port.WriterTrafficSwitcher;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -14,9 +14,9 @@ public final class RoutingWriterTrafficSwitcher implements WriterTrafficSwitcher
 
     public RoutingWriterTrafficSwitcher(
             @Qualifier("regionalRoutingDataSource") RoutingDataSource routingDataSource,
-            @Value("${FAILOVER_WRITER_DB_HOST:postgres-eu}") String promotedWriterId) {
+            MultiRegionConfig config) {
         this.routingDataSource = routingDataSource;
-        this.promotedWriterId = promotedWriterId;
+        this.promotedWriterId = config.failoverWriterDbHost();
     }
 
     @Override

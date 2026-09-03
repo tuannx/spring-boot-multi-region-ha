@@ -31,7 +31,7 @@ RUN chown -R spring:spring /app
 USER spring
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -f http://localhost:${APP_PORT:-8080}/actuator/health || exit 1
+  CMD curl -f http://localhost:${SERVER_PORT:-8080}/actuator/health || exit 1
 # The agent is present in every image, but the default HA stack keeps its SDK
 # disabled. docker-compose.observability.yml enables it and supplies OTLP.
 ENV OTEL_SDK_DISABLED=true

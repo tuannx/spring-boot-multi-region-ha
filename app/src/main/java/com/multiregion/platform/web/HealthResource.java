@@ -1,8 +1,9 @@
 package com.multiregion.platform.web;
 
+import com.multiregion.platform.config.MultiRegionConfig;
 import com.multiregion.platform.failover.port.AuroraTopologyGateway;
 import com.multiregion.platform.failover.port.FailoverControl;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -18,11 +19,19 @@ public class HealthResource {
     private final String awsRegion;
     private final String regionRole;
 
+    @Autowired
     public HealthResource(
             AuroraTopologyGateway topologyGateway,
             FailoverControl failoverControl,
-            @Value("${AWS_REGION:us-east-1}") String awsRegion,
-            @Value("${REGION_ROLE:primary}") String regionRole) {
+            MultiRegionConfig config) {
+        this(topologyGateway, failoverControl, config.awsRegion(), config.regionRole());
+    }
+
+    HealthResource(
+            AuroraTopologyGateway topologyGateway,
+            FailoverControl failoverControl,
+            String awsRegion,
+            String regionRole) {
         this.topologyGateway = topologyGateway;
         this.failoverControl = failoverControl;
         this.awsRegion = awsRegion;

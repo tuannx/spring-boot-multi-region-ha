@@ -62,7 +62,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 - **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions to a self-hosted SigNoz Docker stack
 - **Floci infrastructure profile**: AWS-compatible APIs provision RDS and Amazon MQ resources with real PostgreSQL and RabbitMQ data planes
 - **Nginx request routing**: Static source-region routing for the local demo
-- **Region-aware config**: Profile-based configuration per region
+- **Region-aware config**: Typed Pkl defaults plus profile-based regional overrides
 
 ## Quick Start
 
@@ -409,11 +409,11 @@ previously unreachable primary is allowed to rejoin.
 The queue module keeps regional queue/DR state in the `queue_region_status` table. Listener ownership is split into local startup listeners and dynamic takeover listeners:
 
 - On startup, an app only starts primary listeners for its own `AWS_REGION`.
-- The dynamic coordinator does not start any default listeners. It polls `queue_region_status` every `QUEUE_TAKEOVER_POLL_INTERVAL_MS` (`60000` ms by default).
+- The dynamic coordinator does not start any default listeners. It polls `queue_region_status` every `QUEUES_TAKEOVERPOLLINTERVALMS` (`60000` ms by default).
 - `DOWN` means the source region has entered DR switchover/unavailable state for that queue, not normal load balancing.
 - If a brother region is `DOWN` while the local region is `UP`, the dynamic coordinator starts takeover listeners for every down brother queue in `queues.names`.
 - If the brother region recovers, the dynamic coordinator stops those takeover listeners and normal source-region ownership resumes.
-- If the brother region remains down, each takeover lease is automatically released after `QUEUE_TAKEOVER_MAX_DURATION_MS` (`1800000` ms, 30 minutes) and is not re-created until that queue recovers and fails again.
+- If the brother region remains down, each takeover lease is automatically released after `QUEUES_TAKEOVERMAXDURATIONMS` (`1800000` ms, 30 minutes) and is not re-created until that queue recovers and fails again.
 
 The default listener implementation logs lifecycle events only. To attach a real broker such as SQS, RabbitMQ, or Kafka, provide a Spring bean implementing `QueueListenerProvisioner`.
 
@@ -424,14 +424,17 @@ Docker Compose starts one RabbitMQ broker per region:
 | `us-east-1` | `rabbitmq-us` | `localhost:5672` | `http://localhost:15672` | `orders.us-east-1` | `orders.us-east-1.retry` | `orders.us-east-1.dlq` |
 | `eu-west-1` | `rabbitmq-eu` | `localhost:5673` | `http://localhost:15673` | `orders.eu-west-1` | `orders.eu-west-1.retry` | `orders.eu-west-1.dlq` |
 
-Credentials are `appuser` / `apppass`. The apps use `QUEUE_LISTENER_TYPE=rabbit` inside Docker, so assignments start real RabbitMQ listener containers. Outside Docker the default is `logging`, which keeps local development lightweight.
+Credentials are `appuser` / `apppass`. The apps use the `region-us` or
+`region-eu` profile and the Pkl-backed `QUEUES_LISTENERTYPE=rabbit` override
+inside Docker, so assignments start real RabbitMQ listener containers. Outside
+Docker the Pkl default is `logging`, which keeps local development lightweight.
 
 Retry/DLQ defaults:
 
 - Main queue dead-letters rejected messages to `.retry`.
-- Retry queue waits `QUEUE_RETRY_DELAY_MS` using RabbitMQ TTL, then routes back to the main queue.
+- Retry queue waits `QUEUES_RABBITMQ_RETRYDELAYMS` using RabbitMQ TTL, then routes back to the main queue.
 - DLQ queues are declared for terminal routing when a real consumer adds max-attempt handling.
-- `QUEUE_VISIBILITY_TIMEOUT_MS` maps to listener receive timeout for the local RabbitMQ adapter; for SQS this is where the same config maps to native visibility timeout.
+- `QUEUES_RABBITMQ_VISIBILITYTIMEOUTMS` maps to listener receive timeout for the local RabbitMQ adapter; for SQS this is where the same config maps to native visibility timeout.
 - During DR switchover, takeover is planned for every queue in `queues.names`, so adding more logical queues makes a brother region take over all down-region queues, not just `orders`.
 
 ```bash
@@ -507,6 +510,14 @@ and architecture drift; the reproducible baseline workflow is documented in
 
 ## Configuration Reference
 
+Application defaults live in
+[`app/src/main/resources/pkl/PklApplicationConfig.pkl`](app/src/main/resources/pkl/PklApplicationConfig.pkl).
+`application.yml` and the two profile YAML files are Spring Boot bootstrap
+files that only import Pkl. Environment variables remain higher-precedence
+deployment overrides. Pkl property names preserve camel case, so nested
+environment names such as `QUEUES_LISTENERTYPE` and
+`QUEUES_RABBITMQ_BROKERS_US_EAST_1_HOST` are intentional.
+
 ### Environment Variables
 
 | Variable | Default | Description |
@@ -531,12 +542,13 @@ and architecture drift; the reproducible baseline workflow is documented in
 | `FAILOVER_WRITER_DB_PORT` | `5432` | Promoted-writer database port |
 | `FAILOVER_FAILURE_THRESHOLD` | `3` | Consecutive primary-unreachable probes required before a promotion decision |
 | `FAILOVER_ALLOW_UNFENCED_PROMOTION` | `false` | Unsafe demo opt-in; when false, unreachable authority cannot be promoted or trusted during restart reconciliation |
-| `APP_PORT` | `8080` | Application HTTP port |
-| `QUEUE_POLL_INTERVAL_MS` | `5000` | Local listener reconciliation interval |
-| `QUEUE_TAKEOVER_POLL_INTERVAL_MS` | `60000` | Dynamic takeover reconciliation interval |
-| `QUEUE_TAKEOVER_MAX_DURATION_MS` | `1800000` | Maximum takeover lease duration before auto-release |
-| `QUEUE_RETRY_DELAY_MS` | `5000` | RabbitMQ retry queue delay before routing back to main queue |
-| `QUEUE_VISIBILITY_TIMEOUT_MS` | `30000` | Listener receive timeout; maps to native visibility timeout for SQS-style adapters |
+| `SERVER_PORT` | `8080` | Application HTTP port |
+| `QUEUES_LISTENERTYPE` | `logging` | `logging` or `rabbit` listener implementation |
+| `QUEUES_POLLINTERVALMS` | `5000` | Local listener reconciliation interval |
+| `QUEUES_TAKEOVERPOLLINTERVALMS` | `60000` | Dynamic takeover reconciliation interval |
+| `QUEUES_TAKEOVERMAXDURATIONMS` | `1800000` | Maximum takeover lease duration before auto-release |
+| `QUEUES_RABBITMQ_RETRYDELAYMS` | `5000` | RabbitMQ retry queue delay before routing back to main queue |
+| `QUEUES_RABBITMQ_VISIBILITYTIMEOUTMS` | `30000` | Listener receive timeout; maps to native visibility timeout for SQS-style adapters |
 
 ### Spring Profiles
 

@@ -1,0 +1,4 @@
+amends "PklApplicationConfig.pkl"
+
+AWS_REGION = "us-east-1"
+REGION_ROLE = "primary"

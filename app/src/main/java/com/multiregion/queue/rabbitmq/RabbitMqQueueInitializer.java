@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 
 @Component
-@ConditionalOnProperty(prefix = "queues", name = "listener-type", havingValue = "rabbit")
+@ConditionalOnProperty(prefix = "queues", name = "listenerType", havingValue = "rabbit")
 public class RabbitMqQueueInitializer {
 
     private static final Logger log = LoggerFactory.getLogger(RabbitMqQueueInitializer.class);

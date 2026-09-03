@@ -1,9 +1,10 @@
 package com.multiregion.platform.database;
 
+import com.multiregion.platform.config.MultiRegionConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -19,38 +20,94 @@ public class DatabaseConnections {
 
     private static final Logger log = LoggerFactory.getLogger(DatabaseConnections.class);
 
-    @Value("${DB_USER:appuser}")
-    private String dbUser;
+    private final String dbUser;
+    private final String dbPass;
+    private final String awsRegion;
+    private final String regionRole;
+    private final String activeWriterDbHost;
+    private final int activeWriterDbPort;
+    private final String localDbHost;
+    private final int localDbPort;
+    private final String failoverWriterDbHost;
+    private final int failoverWriterDbPort;
+    private final String dbName;
+    private final String failoverHomeRegion;
+    private final String clusterInstancePattern;
 
-    @Value("${DB_PASS:apppass}")
-    private String dbPass;
+    @Autowired
+    public DatabaseConnections(MultiRegionConfig config) {
+        this(
+                config.dbUser(),
+                config.dbPass(),
+                config.awsRegion(),
+                config.regionRole(),
+                config.activeWriterDbHost(),
+                config.activeWriterDbPort(),
+                config.localDbHost(),
+                config.localDbPort(),
+                config.failoverWriterDbHost(),
+                config.failoverWriterDbPort(),
+                config.dbName(),
+                config.failoverHomeRegion(),
+                config.clusterInstancePattern());
+    }
 
-    @Value("${AWS_REGION:us-east-1}")
-    private String awsRegion;
+    DatabaseConnections(
+            String dbUser,
+            String dbPass,
+            String awsRegion,
+            String regionRole,
+            String activeWriterDbHost,
+            int activeWriterDbPort,
+            String localDbHost,
+            int localDbPort,
+            String failoverWriterDbHost,
+            int failoverWriterDbPort,
+            String dbName) {
+        this(
+                dbUser,
+                dbPass,
+                awsRegion,
+                regionRole,
+                activeWriterDbHost,
+                activeWriterDbPort,
+                localDbHost,
+                localDbPort,
+                failoverWriterDbHost,
+                failoverWriterDbPort,
+                dbName,
+                awsRegion,
+                "?:5432");
+    }
 
-    @Value("${REGION_ROLE:primary}")
-    private String regionRole;
-
-    @Value("${ACTIVE_WRITER_DB_HOST:postgres-us}")
-    private String activeWriterDbHost;
-
-    @Value("${ACTIVE_WRITER_DB_PORT:5432}")
-    private int activeWriterDbPort;
-
-    @Value("${LOCAL_DB_HOST:}")
-    private String localDbHost;
-
-    @Value("${LOCAL_DB_PORT:5432}")
-    private int localDbPort;
-
-    @Value("${FAILOVER_WRITER_DB_HOST:postgres-eu}")
-    private String failoverWriterDbHost;
-
-    @Value("${FAILOVER_WRITER_DB_PORT:5432}")
-    private int failoverWriterDbPort;
-
-    @Value("${DB_NAME:appdb}")
-    private String dbName;
+    private DatabaseConnections(
+            String dbUser,
+            String dbPass,
+            String awsRegion,
+            String regionRole,
+            String activeWriterDbHost,
+            int activeWriterDbPort,
+            String localDbHost,
+            int localDbPort,
+            String failoverWriterDbHost,
+            int failoverWriterDbPort,
+            String dbName,
+            String failoverHomeRegion,
+            String clusterInstancePattern) {
+        this.dbUser = dbUser;
+        this.dbPass = dbPass;
+        this.awsRegion = awsRegion;
+        this.regionRole = regionRole;
+        this.activeWriterDbHost = activeWriterDbHost;
+        this.activeWriterDbPort = activeWriterDbPort;
+        this.localDbHost = localDbHost;
+        this.localDbPort = localDbPort;
+        this.failoverWriterDbHost = failoverWriterDbHost;
+        this.failoverWriterDbPort = failoverWriterDbPort;
+        this.dbName = dbName;
+        this.failoverHomeRegion = failoverHomeRegion;
+        this.clusterInstancePattern = clusterInstancePattern;
+    }
 
     @Bean
     public DataSource writeDataSource() {
@@ -116,8 +173,8 @@ public class DatabaseConnections {
         properties.setProperty("password", dbPass);
         properties.setProperty("wrapperPlugins", "failover2,dev");
         properties.setProperty("wrapperDialect", "pg");
-        properties.setProperty("failoverHomeRegion", awsRegion);
-        properties.setProperty("clusterInstanceHostPattern", "?:5432");
+        properties.setProperty("failoverHomeRegion", failoverHomeRegion);
+        properties.setProperty("clusterInstanceHostPattern", clusterInstancePattern);
         properties.setProperty("clusterTopologyRefreshRateMs", "5000");
         properties.setProperty("failoverTimeoutMs", "5000");
         properties.setProperty("connectTimeout", "5");

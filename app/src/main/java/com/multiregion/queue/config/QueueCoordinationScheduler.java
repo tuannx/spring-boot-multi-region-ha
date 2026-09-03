@@ -28,14 +28,14 @@ public class QueueCoordinationScheduler {
     }
 
     @Scheduled(
-            fixedDelayString = "${queues.poll-interval-ms:5000}",
+            fixedDelayString = "${queues.pollIntervalMs:5000}",
             scheduler = "queueTaskScheduler")
     public void reconcileLocalListeners() {
         localCoordinator.reconcile();
     }
 
     @Scheduled(
-            fixedDelayString = "${queues.takeover-poll-interval-ms:60000}",
+            fixedDelayString = "${queues.takeoverPollIntervalMs:60000}",
             scheduler = "queueTaskScheduler")
     public void reconcileTakeoverListeners() {
         takeoverCoordinator.reconcile();

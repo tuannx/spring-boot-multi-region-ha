@@ -1,1 +1,1 @@
-amends "PklMultiRegionConfig.pkl"
+amends "PklApplicationConfig.pkl"
