@@ -6,6 +6,14 @@ local flow does not require a running collector. The optional observability
 overlay enables the SDK for both application regions and exports OTLP gRPC to
 the SigNoz ingester on the Docker host.
 
+The repository pins SigNoz `v0.140.0`, the OpenTelemetry Collector
+`v0.144.9`, and ClickHouse `25.12.5` for a reproducible local stack. The
+ClickHouse pin follows SigNoz's supported Docker deployment defaults rather
+than tracking an unrelated latest database release.
+The generated SigNoz lock may still contain `postgres:16` for SigNoz's
+internal metadata store; that image is separate from the application's
+PostgreSQL `18.6` data plane.
+
 ## Start the local stack
 
 SigNoz's current self-hosted Docker workflow uses `foundryctl` to generate the
@@ -26,6 +34,11 @@ before inspecting telemetry. Do not commit those credentials. The generated
 Compose patch uses a clearly local-only default for
 `SIGNOZ_TOKENIZER_JWT_SECRET`; set that variable explicitly for any shared or
 persistent environment.
+
+The application Compose files use PostgreSQL `18.6`. A PostgreSQL major
+version is not an in-place data-directory upgrade: back up and migrate an
+existing pre-18 volume with PostgreSQL's upgrade procedure, or recreate local
+demo volumes after confirming that the data can be discarded.
 
 Open:
 

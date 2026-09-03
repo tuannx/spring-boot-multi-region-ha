@@ -5,7 +5,6 @@ import com.multiregion.platform.failover.application.FailoverOrchestrator;
 import com.multiregion.platform.failover.port.AuroraTopologyGateway;
 import com.multiregion.platform.failover.port.FailoverPromotionGateway;
 import com.multiregion.platform.failover.port.WriterTrafficSwitcher;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -18,17 +17,14 @@ public class FailoverConfiguration {
             AuroraTopologyGateway topologyGateway,
             FailoverPromotionGateway promotionGateway,
             WriterTrafficSwitcher trafficSwitcher,
-            MultiRegionConfig multiRegionConfig,
-            @Value("${FAILOVER_FAILURE_THRESHOLD:3}") int failureThreshold,
-            @Value("${FAILOVER_ALLOW_UNFENCED_PROMOTION:false}")
-            boolean allowUnfencedPromotion) {
+            MultiRegionConfig multiRegionConfig) {
         return new FailoverOrchestrator(
                 topologyGateway,
                 promotionGateway,
                 trafficSwitcher,
                 multiRegionConfig.isPrimary(),
-                failureThreshold,
-                allowUnfencedPromotion);
+                multiRegionConfig.failoverFailureThreshold(),
+                multiRegionConfig.allowUnfencedPromotion());
     }
 
     @Bean(name = "failoverTaskScheduler")

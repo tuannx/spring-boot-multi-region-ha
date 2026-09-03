@@ -11,7 +11,7 @@ spec:
   # Update these together with the compatibility notes in docs/observability.md.
   signoz:
     spec:
-      image: signoz/signoz:v0.135.0
+      image: signoz/signoz:v0.140.0
   ingester:
     spec:
       image: signoz/signoz-otel-collector:v0.144.9
