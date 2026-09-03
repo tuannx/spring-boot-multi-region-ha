@@ -18,10 +18,10 @@ jobs:
 
     steps:
       - name: Run arcade-agent
-        # v0.1.1
-        uses: lemduc/arcade-agent/actions/analyze@3d7f6130b22050979d2d18084a63bc6a932b9789
+        # v0.3.0 action; it installs the latest compatible v0.2.0 package.
+        uses: lemduc/arcade-agent/actions/analyze@576e412dadd6f752f3a5f886201a7e80db93407f
         with:
-          arcade-agent-version: "0.1.1"
+          arcade-agent-version: "0.2.0"
           source-path: app/src/main/java
           language: java
           repo-name: spring-boot-multi-region-ha

@@ -1,0 +1,47 @@
+# Optional overlay for local OpenTelemetry + SigNoz runs.
+# Start it through scripts/observability-up.sh so the SigNoz collector is
+# available before the application containers are created.
+services:
+  app-us:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: multiregion-app
+      OTEL_RESOURCE_ATTRIBUTES: >-
+        service.namespace=multiregion-ha,
+        service.version=${OTEL_SERVICE_VERSION:-local},
+        deployment.environment=local,
+        cloud.region=us-east-1,
+        service.instance.id=app-us
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://host.docker.internal:4317}
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
+      OTEL_BSP_SCHEDULE_DELAY: "5000"
+      OTEL_METRIC_EXPORT_INTERVAL: "15000"
+
+  app-eu:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: multiregion-app
+      OTEL_RESOURCE_ATTRIBUTES: >-
+        service.namespace=multiregion-ha,
+        service.version=${OTEL_SERVICE_VERSION:-local},
+        deployment.environment=local,
+        cloud.region=eu-west-1,
+        service.instance.id=app-eu
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://host.docker.internal:4317}
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-1.0}
+      OTEL_BSP_SCHEDULE_DELAY: "5000"
+      OTEL_METRIC_EXPORT_INTERVAL: "15000"

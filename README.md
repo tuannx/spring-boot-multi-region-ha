@@ -1,9 +1,9 @@
 # Spring Boot Multi-Region High Availability
 
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.0-brightgreen)](https://spring.io/projects/spring-boot)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen)](https://spring.io/projects/spring-boot)
 [![Java](https://img.shields.io/badge/Java-26.0.2-orange)](https://jdk.java.net/26/)
-[![AWS JDBC Driver](https://img.shields.io/badge/AWS%20JDBC%20Driver-4.0.1-orange)](https://github.com/awslabs/aws-advanced-jdbc-wrapper)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)](https://www.postgresql.org/)
+[![AWS JDBC Driver](https://img.shields.io/badge/AWS%20JDBC%20Driver-4.4.0-orange)](https://github.com/awslabs/aws-advanced-jdbc-wrapper)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.6-blue)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
 
 A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** `failover2` plugin. This project simulates Aurora topology and control-plane state with local PostgreSQL instances, including bounded failover detection, runtime writer routing, nginx request routing, and region-aware health monitoring.
@@ -59,6 +59,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
 - **Docker Compose**: Full stack runs locally with Docker
+- **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions to a self-hosted SigNoz Docker stack
 - **Floci infrastructure profile**: AWS-compatible APIs provision RDS and Amazon MQ resources with real PostgreSQL and RabbitMQ data planes
 - **Nginx request routing**: Static source-region routing for the local demo
 - **Region-aware config**: Profile-based configuration per region
@@ -70,6 +71,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 - Docker & Docker Compose v2
 - Java 26.0.2 (for local development)
 - curl / httpie (for testing)
+- `foundryctl` (only for the optional SigNoz observability stack)
 
 ### Available cases
 
@@ -171,6 +173,67 @@ curl -s -X PUT http://localhost:8080/api/products/1 \
 curl -s -X DELETE http://localhost:8080/api/products/3
 ```
 
+### 5. Run with OpenTelemetry + SigNoz
+
+The default Compose flow remains lightweight. To run the two application
+regions with the OpenTelemetry Java agent and a local SigNoz Docker stack, use
+the optional workflow below:
+
+```bash
+# Install foundryctl once using the official SigNoz Docker guide:
+# https://signoz.io/docs/install/docker/
+./scripts/observability-up.sh
+./scripts/observability-verify.sh
+```
+
+Open the SigNoz UI at <http://localhost:9090>. The application containers send
+OTLP gRPC to `localhost:4317`; the overlay keeps the same logical service name
+(`multiregion-app`) and adds `cloud.region` plus `service.instance.id` so US
+and EU telemetry can be compared in the same service. Generate a little
+traffic with the health, product, and Actuator requests above, then inspect
+Services, Traces, Metrics, and Logs in SigNoz. See the complete
+[OpenTelemetry/SigNoz guide](docs/observability.md) for lifecycle and cleanup
+commands. If port `8080` is already in use, choose another host port while
+keeping the application port inside the container unchanged:
+
+```bash
+APP_US_HOST_PORT=18080 ./scripts/observability-up.sh
+APP_US_HOST_PORT=18080 ./scripts/observability-verify.sh
+```
+
+## Observability proof
+
+The screenshots below were captured from the local runtime on 2026-09-02 after
+starting the SigNoz workflow with the local `foundryctl` binary and
+`APP_US_HOST_PORT=18080`, sending HTTP/JDBC traffic, and checking both region
+health endpoints. They are repository assets, so the proof remains reviewable
+alongside the integration:
+
+![SigNoz Services showing the multiregion application](docs/assets/observability/signoz-services.png)
+
+![SigNoz Traces showing instrumented Spring Boot requests](docs/assets/observability/signoz-traces.png)
+
+![SigNoz Metrics showing JVM and HTTP telemetry](docs/assets/observability/signoz-metrics.png)
+
+Runtime verification command:
+
+```bash
+APP_US_HOST_PORT=18080 ./scripts/observability-verify.sh
+```
+
+Observed during the initial screenshot run: SigNoz health returned
+`{"status":"ok"}`; US and EU returned `{"status":"UP"}` with
+`dbConnected:true`; SigNoz Services showed `multiregion-app`; Traces showed
+`GET /actuator/health` with HTTP 200; and Metrics showed `jvm.memory.used`
+samples from the JVM agent. After the dependency refresh, the same proof was
+re-run on 2026-09-03 with SigNoz `v0.140.0`: ClickHouse read-back contained
+traces and HTTP 200 spans from both `app-us`/`us-east-1` and
+`app-eu`/`eu-west-1`, `jvm.memory.used` metrics, and application logs.
+This proves local collector/UI and application reachability. It does not claim
+production-grade cross-region telemetry durability or a production SigNoz
+deployment; the stack is intentionally a single-node local observability
+environment.
+
 ## Floci Infrastructure Environment
 
 The Floci profile validates the same application and failover flow while moving
@@ -197,15 +260,13 @@ complete provisioning and acceptance flow with:
 
 The script:
 
-1. Starts one pinned `floci/floci:1.5.34` control plane per region so resources
+1. Starts one pinned `floci/floci:2.0.1` control plane per region so resources
    and failure domains are isolated.
 2. Applies `infra/floci/terraform` against both Floci endpoints for two RDS
-   instances. The AWS provider is temporarily pinned to 5.x until
-   [floci-io/floci#1951](https://github.com/floci-io/floci/pull/1951) ships
-   support for the 6.x `dbi-resource-id` refresh filter.
-3. Provisions both Amazon MQ brokers through Floci's AWS API. This temporary
-   AWS CLI path avoids a Floci 1.5.34 `DescribeBroker` response incompatibility
-   also fixed by #1951; the brokers can return to Terraform after that release.
+   instances using the latest AWS provider 6.x compatibility path.
+3. Provisions both Amazon MQ brokers through Floci's AWS API. The explicit AWS
+   CLI path keeps broker lifecycle deterministic while the Terraform provider's
+   `DescribeUser` behavior remains outside this demo's scope.
 4. Injects the local Aurora topology/fencing functions into the Floci-managed
    PostgreSQL data planes.
 5. Connects both Spring applications to the endpoints returned by Floci.
@@ -233,7 +294,7 @@ This project models a single-writer multi-region deployment, not active-active w
 
 ### The AWS Advanced JDBC Wrapper
 
-This project uses the [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws-advanced-jdbc-wrapper) version 4.0.1, which extends the PostgreSQL JDBC driver with Aurora-aware connection handling:
+This project uses the [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws-advanced-jdbc-wrapper) version 4.4.0, which extends the PostgreSQL JDBC driver with Aurora-aware connection handling:
 
 1. **Topology Discovery**: `pg_catalog.aurora_replica_status()` identifies the current writer and topology.
 
@@ -520,7 +581,7 @@ global ingress health/failover remains an external control-plane responsibility.
 ### Local Development without Docker
 
 ```bash
-# Prerequisites: PostgreSQL 16 running locally
+# Prerequisites: PostgreSQL 18.6 running locally
 # Create databases for both regions
 createdb -U appuser appdb
 

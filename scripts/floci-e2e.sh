@@ -12,6 +12,9 @@ FLOCI_EU_ENDPOINT="${FLOCI_EU_ENDPOINT:-http://localhost:4567}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-240}"
 FLOCI_DATABASE_PASSWORD="${FLOCI_DATABASE_PASSWORD:-AppPass123!}"
 FLOCI_RABBITMQ_PASSWORD="${FLOCI_RABBITMQ_PASSWORD:-AppPass123456!}"
+APP_US_URL="${APP_US_URL:-http://localhost:${APP_US_HOST_PORT:-8080}}"
+APP_EU_URL="${APP_EU_URL:-http://localhost:${APP_EU_HOST_PORT:-8081}}"
+ROUTER_URL="${ROUTER_URL:-http://localhost:${ROUTER_HOST_PORT:-8000}}"
 CLEANUP=true
 TERRAFORM_APPLIED=false
 US_BROKER_ID=""
@@ -215,7 +218,7 @@ terraform_in_floci apply \
   -var="floci_eu_endpoint=$FLOCI_EU_ENDPOINT" \
   -var="database_password=$FLOCI_DATABASE_PASSWORD"
 
-# Floci 1.5.34 exposes RabbitMQ users from DescribeBroker, which makes the
+# Floci 2.0.1 exposes RabbitMQ users from DescribeBroker, which makes the
 # Terraform AWS provider call the unsupported standalone DescribeUser API.
 # Provision through the same AWS-compatible endpoint until floci-io/floci#1951
 # is released, then move these brokers back into the Terraform module.
@@ -286,6 +289,9 @@ COMPOSE_FILE="$COMPOSE_FILE_PATH" \
 COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT_NAME" \
 APP_US_CONTAINER=multiregion-floci-app-us \
 APP_EU_CONTAINER=multiregion-floci-app-eu \
+APP_US_URL="$APP_US_URL" \
+APP_EU_URL="$APP_EU_URL" \
+ROUTER_URL="$ROUTER_URL" \
 DB_TOOL_CONTAINER=spring-ha-floci-db-tools \
 DB_USER=appuser \
 DB_PASSWORD="$FLOCI_DATABASE_PASSWORD" \

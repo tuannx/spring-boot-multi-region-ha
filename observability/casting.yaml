@@ -1,0 +1,39 @@
+apiVersion: v1alpha1
+kind: Installation
+metadata:
+  name: signoz
+spec:
+  deployment:
+    flavor: compose
+    mode: docker
+
+  # Pin the application and storage images used by the generated local stack.
+  # Update these together with the compatibility notes in docs/observability.md.
+  signoz:
+    spec:
+      image: signoz/signoz:v0.140.0
+  ingester:
+    spec:
+      image: signoz/signoz-otel-collector:v0.144.9
+  telemetrystore:
+    spec:
+      image: clickhouse/clickhouse-server:25.12.5
+  telemetrykeeper:
+    kind: clickhousekeeper
+    spec:
+      image: clickhouse/clickhouse-keeper:25.12.5
+
+  # app-us already publishes port 8080. Keep SigNoz's internal port unchanged
+  # and expose its UI on 9090 on the host.
+  patches:
+    - target: deployment/compose.yaml
+      operations:
+        - op: test
+          path: /services/signoz-signoz-0/ports/0
+          value: "8080:8080"
+        - op: replace
+          path: /services/signoz-signoz-0/ports/0
+          value: "9090:8080"
+        - op: add
+          path: /services/signoz-signoz-0/environment/-
+          value: "SIGNOZ_TOKENIZER_JWT_SECRET=${SIGNOZ_TOKENIZER_JWT_SECRET:-local-dev-only-change-me}"

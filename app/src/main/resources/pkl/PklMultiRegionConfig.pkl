@@ -1,0 +1,15 @@
+/// Typed defaults and invariants for the failover control plane.
+///
+/// Runtime environment variables and profile-specific Spring configuration
+/// remain higher-precedence overrides when the Pkl property source is loaded.
+module com.multiregion.platform.config.PklMultiRegionConfig
+
+REGION_ROLE: "primary" | "secondary" = "primary"
+
+AWS_REGION: "us-east-1" | "eu-west-1" = "us-east-1"
+
+FAILOVER_HOME_REGION: "us-east-1" | "eu-west-1" = "us-east-1"
+
+FAILOVER_FAILURE_THRESHOLD: Int(isBetween(1, 20)) = 3
+
+FAILOVER_ALLOW_UNFENCED_PROMOTION: Boolean = false

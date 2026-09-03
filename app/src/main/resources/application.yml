@@ -8,6 +8,8 @@ server:
 spring:
   application:
     name: multiregion-app
+  config:
+    import: classpath:/pkl/application.pkl
   threads:
     virtual:
       enabled: true
@@ -54,10 +56,7 @@ management:
     process:
       enabled: true
 
-# Region configuration (defaults)
-AWS_REGION: us-east-1
-REGION_ROLE: primary
-FAILOVER_HOME_REGION: us-east-1
+# Routing defaults not owned by the Pkl schema
 ACTIVE_HOME_FAILOVER_MODE: strict-writer
 INACTIVE_HOME_FAILOVER_MODE: home-reader-or-writer
 GLOBAL_CLUSTER_PATTERNS: postgres-us:5432,postgres-eu:5432
@@ -68,8 +67,6 @@ LOCAL_DB_HOST: ${LOCAL_DB_HOST:}
 LOCAL_DB_PORT: ${LOCAL_DB_PORT:5432}
 FAILOVER_WRITER_DB_HOST: ${FAILOVER_WRITER_DB_HOST:postgres-eu}
 FAILOVER_WRITER_DB_PORT: ${FAILOVER_WRITER_DB_PORT:5432}
-FAILOVER_FAILURE_THRESHOLD: ${FAILOVER_FAILURE_THRESHOLD:3}
-FAILOVER_ALLOW_UNFENCED_PROMOTION: ${FAILOVER_ALLOW_UNFENCED_PROMOTION:false}
 
 # Dynamic queue listener coordination
 queues:

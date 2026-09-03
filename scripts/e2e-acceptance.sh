@@ -18,6 +18,9 @@ US_DB_HOST="${US_DB_HOST:-}"
 US_DB_PORT="${US_DB_PORT:-5432}"
 EU_DB_HOST="${EU_DB_HOST:-}"
 EU_DB_PORT="${EU_DB_PORT:-5432}"
+APP_US_URL="${APP_US_URL:-http://localhost:${APP_US_HOST_PORT:-8080}}"
+APP_EU_URL="${APP_EU_URL:-http://localhost:${APP_EU_HOST_PORT:-8081}}"
+ROUTER_URL="${ROUTER_URL:-http://localhost:${ROUTER_HOST_PORT:-8000}}"
 
 usage() {
   cat <<USAGE
@@ -28,6 +31,10 @@ Options:
   --cleanup   Stop the stack and remove volumes when the script exits.
   --verify-failover
               Fence US, promote EU, verify write routing, then verify restart recovery.
+
+Environment overrides:
+  APP_US_URL, APP_EU_URL, ROUTER_URL
+              Override the application and router URLs used by the acceptance checks.
 USAGE
 }
 
@@ -145,8 +152,12 @@ fi
   "$US_DB_PORT" \
   "$EU_DB_CONTAINER" \
   "$EU_DB_HOST" \
-  "$EU_DB_PORT" <<'PY'
+  "$EU_DB_PORT" \
+  "$APP_US_URL" \
+  "$APP_EU_URL" \
+  "$ROUTER_URL" <<'PY'
 import json
+import re
 import subprocess
 import sys
 import time
@@ -162,9 +173,7 @@ db_password = sys.argv[6]
 db_name = sys.argv[7]
 us_db_container, us_db_host, us_db_port = sys.argv[8:11]
 eu_db_container, eu_db_host, eu_db_port = sys.argv[11:14]
-us_url = "http://localhost:8080"
-eu_url = "http://localhost:8081"
-router_url = "http://localhost:8000"
+us_url, eu_url, router_url = sys.argv[14:17]
 
 
 def request(root, method, path, body=None, expected=(200,), headers=None):
@@ -237,7 +246,9 @@ _, runtime_info = request(us_url, "GET", "/actuator/info")
 for contributor in ("build", "java", "os", "process"):
     assert contributor in runtime_info, runtime_info
 java_version = str(runtime_info["java"].get("version", ""))
-assert java_version == "26.0.2", runtime_info["java"]
+# Corretto's runtime metadata may append its vendor build (for example
+# 26.0.2.1) even when the image is pinned to the Java 26.0.2 release line.
+assert re.fullmatch(r"26\.0\.2(?:\.\d+)?", java_version), runtime_info["java"]
 for process_field in ("currentTime", "timezone", "locale", "workingDirectory"):
     assert process_field in runtime_info["process"], runtime_info["process"]
 
@@ -414,6 +425,8 @@ fi
 
 SIMULATE_BROTHER_APP_DOWN=true \
 BROTHER_APP_CONTAINER="$APP_EU_CONTAINER" \
+BASE_URL="$APP_US_URL" \
+BROTHER_BASE_URL="$APP_EU_URL" \
 TIMEOUT_SECONDS="$TIMEOUT_SECONDS" \
 ./scripts/queue-takeover-acceptance.sh
 
@@ -426,7 +439,9 @@ if [[ "$VERIFY_FAILOVER" == "true" ]]; then
     "$DB_NAME" \
     "$EU_DB_CONTAINER" \
     "$EU_DB_HOST" \
-    "$EU_DB_PORT" <<'PY'
+    "$EU_DB_PORT" \
+    "$APP_US_URL" \
+    "$APP_EU_URL" <<'PY'
 import json
 import subprocess
 import sys
@@ -442,8 +457,7 @@ db_name = sys.argv[5]
 eu_db_container = sys.argv[6]
 eu_db_host = sys.argv[7]
 eu_db_port = sys.argv[8]
-eu_url = "http://localhost:8081"
-us_url = "http://localhost:8080"
+us_url, eu_url = sys.argv[9:11]
 
 
 def request(root, method, path, body=None, expected=(200,)):

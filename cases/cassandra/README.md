@@ -24,7 +24,7 @@ replicates them across regions.
 
 ## Guarantees demonstrated
 
-- Six Cassandra 5.0.5 nodes: three in `us-east-1`, three in `eu-west-1`.
+- Six Cassandra 5.0.9 nodes: three in `us-east-1`, three in `eu-west-1`.
 - `NetworkTopologyStrategy` with replication factor 3 in each datacenter.
 - Each Spring Boot app names its local datacenter and contacts only local nodes.
 - Reads, writes, and lightweight transactions default to `LOCAL_QUORUM` /
