@@ -4,8 +4,8 @@ Local reproducible audits use Arcade Agent 0.1.1 to analyze production Java
 code under `app/src/main/java`. The tracked full snapshot was recorded with
 that version, so local audits and MCP calls keep the exact source root, Java,
 and deterministic `pkg` recovery algorithm for comparable before/after
-results. GitHub Actions uses the v0.3.0 analysis action with its latest
-compatible Python package, 0.2.0.
+results. GitHub Actions uses the v0.3.0 analysis action with the latest
+released Python package, 0.3.0.
 
 ## Canonical Comparison Baseline
 
@@ -112,13 +112,13 @@ Do not promote raw CLI or MCP output to the baseline path.
 
 The workflow at `.github/workflows/arcade-agent-analysis.yml` runs on pull
 requests, pushes to `main`, and manual dispatch. It uses the pinned composite
-action and Python package version `0.2.0` with the same production source root:
+action and Python package version `0.3.0` with the same production source root:
 
 ```yaml
 # v0.3.0 action
 uses: lemduc/arcade-agent/actions/analyze@576e412dadd6f752f3a5f886201a7e80db93407f
 with:
-  arcade-agent-version: "0.2.0"
+  arcade-agent-version: "0.3.0"
   source-path: app/src/main/java
   language: java
   repo-name: spring-boot-multi-region-ha
