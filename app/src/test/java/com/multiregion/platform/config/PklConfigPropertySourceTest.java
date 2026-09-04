@@ -55,7 +55,8 @@ class PklConfigPropertySourceTest {
                 Map.of(
                         "SERVER_PORT", "18082",
                         "QUEUES_LISTENERTYPE", "rabbit",
-                        "AWS_REGION", "eu-west-1")));
+                        "AWS_REGION", "eu-west-1",
+                        "DB_PASS", "AppPass123!")));
         environment.getPropertySources().addLast(propertySource);
 
         PklApplicationConfig config = Binder.get(environment)
@@ -64,6 +65,10 @@ class PklConfigPropertySourceTest {
 
         assertThat(config.getServer().getPort()).isEqualTo(18082);
         assertThat(config.getAWS_REGION()).isEqualTo("eu-west-1");
+        assertThat(config.getDB_PASS()).isEqualTo("AppPass123!");
+        // Spring's flattened property source honors higher-precedence deployment
+        // environment values. The generated nested aggregate retains the value
+        // evaluated by Pkl because Pkl itself is not re-evaluated by Binder.
         assertThat(environment.getProperty("queues.listenerType")).isEqualTo("rabbit");
         assertThat(config.getQueues().getListenerType()).isEqualTo("logging");
         assertThat(config.getQueues().getRabbitmq().getBrokers())
