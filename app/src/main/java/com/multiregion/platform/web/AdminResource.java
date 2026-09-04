@@ -1,12 +1,13 @@
 package com.multiregion.platform.web;
 
+import com.multiregion.platform.config.MultiRegionConfig;
 import com.multiregion.platform.failover.domain.FailoverActivationResult;
 import com.multiregion.platform.failover.domain.TopologyInstance;
 import com.multiregion.platform.failover.port.AuroraTopologyGateway;
 import com.multiregion.platform.failover.port.FailoverControl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -27,11 +28,19 @@ public class AdminResource {
     private final String awsRegion;
     private final String regionRole;
 
+    @Autowired
     public AdminResource(
             AuroraTopologyGateway topologyGateway,
             FailoverControl failoverControl,
-            @Value("${AWS_REGION:us-east-1}") String awsRegion,
-            @Value("${REGION_ROLE:primary}") String regionRole) {
+            MultiRegionConfig config) {
+        this(topologyGateway, failoverControl, config.awsRegion(), config.regionRole());
+    }
+
+    AdminResource(
+            AuroraTopologyGateway topologyGateway,
+            FailoverControl failoverControl,
+            String awsRegion,
+            String regionRole) {
         this.topologyGateway = topologyGateway;
         this.failoverControl = failoverControl;
         this.awsRegion = awsRegion;

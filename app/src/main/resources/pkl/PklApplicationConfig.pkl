@@ -1,0 +1,202 @@
+/// Typed application defaults for the multi-region failover service.
+///
+/// Runtime environment variables and profile-specific configuration are
+/// higher-precedence Spring Boot overrides when the Pkl property source is
+/// loaded.
+module com.multiregion.platform.config.PklApplicationConfig
+
+server: Server = new {}
+
+spring: Spring = new {}
+
+management: Management = new {}
+
+info: Info = new {}
+
+queues: Queues = new {}
+
+DB_USER: String = "appuser"
+
+DB_PASS: String = "apppass"
+
+DB_NAME: String = "appdb"
+
+AWS_REGION: "us-east-1" | "eu-west-1" = "us-east-1"
+
+REGION_ROLE: "primary" | "secondary" = "primary"
+
+FAILOVER_HOME_REGION: "us-east-1" | "eu-west-1" = "us-east-1"
+
+ACTIVE_HOME_FAILOVER_MODE: "strict-writer" | "home-reader-or-writer" = "strict-writer"
+
+INACTIVE_HOME_FAILOVER_MODE: "strict-writer" | "home-reader-or-writer" = "home-reader-or-writer"
+
+GLOBAL_CLUSTER_PATTERNS: String = "postgres-us:5432,postgres-eu:5432"
+
+CLUSTER_INSTANCE_PATTERN: String = "postgres-?:5432"
+
+ACTIVE_WRITER_DB_HOST: String = "postgres-us"
+
+ACTIVE_WRITER_DB_PORT: UInt16 = 5432
+
+LOCAL_DB_HOST: String = ""
+
+LOCAL_DB_PORT: UInt16 = 5432
+
+FAILOVER_WRITER_DB_HOST: String = "postgres-eu"
+
+FAILOVER_WRITER_DB_PORT: UInt16 = 5432
+
+FAILOVER_FAILURE_THRESHOLD: Int(isBetween(1, 20)) = 3
+
+FAILOVER_ALLOW_UNFENCED_PROMOTION: Boolean = false
+
+class Server {
+  port: UInt16 = 8080
+}
+
+class Spring {
+  application: SpringApplication = new {}
+  threads: SpringThreads = new {}
+  jpa: SpringJpa = new {}
+  datasource: SpringDatasource = new {}
+}
+
+class SpringApplication {
+  name: String = "multiregion-app"
+}
+
+class SpringThreads {
+  virtual: SpringVirtualThreads = new {}
+}
+
+class SpringVirtualThreads {
+  enabled: Boolean = true
+}
+
+class SpringJpa {
+  hibernate: SpringHibernate = new {}
+  showSql: Boolean = true
+  properties: Map<String, String> = Map(
+    "hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect",
+    "hibernate.format_sql", "true"
+  )
+}
+
+class SpringHibernate {
+  ddlAuto: String = "update"
+}
+
+class SpringDatasource {
+  hikari: Hikari = new {}
+}
+
+class Hikari {
+  maximumPoolSize: Int(isBetween(1, 100)) = 10
+  minimumIdle: Int(isBetween(0, 100)) = 0
+  connectionTimeout: Int(isBetween(250, 300_000)) = 3000
+  validationTimeout: Int(isBetween(250, 300_000)) = 2000
+  idleTimeout: Int(isBetween(0, 1_800_000)) = 10000
+  maxLifetime: Int(isBetween(0, 1_800_000)) = 30000
+  keepaliveTime: Int(isBetween(0, 1_800_000)) = 15000
+  connectionTestQuery: String = "SELECT 1"
+  leakDetectionThreshold: Int(isBetween(0, 1_800_000)) = 60000
+}
+
+class Management {
+  health: ManagementHealth = new {}
+  endpoints: ManagementEndpoints = new {}
+  endpoint: ManagementEndpoint = new {}
+  info: ManagementInfo = new {}
+}
+
+class ManagementHealth {
+  rabbit: ManagementRabbitHealth = new {}
+}
+
+class ManagementRabbitHealth {
+  enabled: Boolean = false
+}
+
+class ManagementEndpoints {
+  web: ManagementWebEndpoints = new {}
+}
+
+class ManagementWebEndpoints {
+  exposure: ManagementExposure = new {}
+}
+
+class ManagementExposure {
+  include: Listing<String> = new {
+    "health"
+    "info"
+    "env"
+    "metrics"
+  }
+}
+
+class ManagementEndpoint {
+  health: ManagementHealthEndpoint = new {}
+}
+
+class ManagementHealthEndpoint {
+  showDetails: String = "always"
+  showComponents: String = "always"
+}
+
+class ManagementInfo {
+  env: ManagementInfoContributor = new {}
+  java: ManagementInfoContributor = new {}
+  os: ManagementInfoContributor = new {}
+  process: ManagementInfoContributor = new {}
+}
+
+class ManagementInfoContributor {
+  enabled: Boolean = true
+}
+
+class Info {
+  app: AppInfo = new {}
+}
+
+class AppInfo {
+  name: String = "Multi-Region Spring Boot"
+  version: String = "0.0.1-SNAPSHOT"
+  description: String = "Multi-region HA application with AWS JDBC Driver failover"
+}
+
+class Queues {
+  enabled: Boolean = true
+  listenerType: "logging" | "rabbit" = "logging"
+  pollIntervalMs: Int(isBetween(1, 86_400_000)) = 5000
+  takeoverPollIntervalMs: Int(isBetween(1, 86_400_000)) = 60000
+  takeoverMaxDurationMs: Int(isBetween(1, 86_400_000 * 24)) = 1_800_000
+  names: Listing<String> = new { "orders" }
+  regions: Listing<"us-east-1" | "eu-west-1"> = new {
+    "us-east-1"
+    "eu-west-1"
+  }
+  rabbitmq: RabbitMq = new {}
+}
+
+class RabbitMq {
+  username: String = "appuser"
+  password: String = "apppass"
+  queueNamePattern: String = "%s.%s"
+  retryQueueSuffix: String = ".retry"
+  dlqSuffix: String = ".dlq"
+  retryDelayMs: Int(isBetween(1, 86_400_000)) = 5000
+  visibilityTimeoutMs: Int(isBetween(1, 86_400_000)) = 30000
+  recoveryIntervalMs: Int(isBetween(1, 86_400_000)) = 5000
+  prefetchCount: Int(isBetween(1, 1000)) = 1
+  recreateTopology: Boolean = true
+  brokers: Map<String, RegionBroker> = Map(
+    "us-east-1", new RegionBroker { host = "localhost"; port = 5672 },
+    "eu-west-1", new RegionBroker { host = "localhost"; port = 5673 }
+  )
+}
+
+class RegionBroker {
+  host: String = "localhost"
+  port: UInt16 = 5672
+}

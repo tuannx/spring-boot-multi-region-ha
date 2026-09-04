@@ -1,6 +1,4 @@
-# ============================================
-# Region: us-east-1 (Primary / Writer)
-# ============================================
-
-AWS_REGION: us-east-1
-REGION_ROLE: primary
+# Spring Boot profile bootstrap only. Values live in Pkl.
+spring:
+  config:
+    import: classpath:/pkl/application-region-us.pkl
