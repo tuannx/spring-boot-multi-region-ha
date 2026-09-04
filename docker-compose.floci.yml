@@ -72,8 +72,8 @@ services:
         exec socat TCP-LISTEN:15672,fork,reuseaddr
         TCP:${FLOCI_RABBITMQ_US_HOST:-127.0.0.1}:15672
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${FLOCI_RABBITMQ_US_HOST_PORT:-5672}:5672"
+      - "${FLOCI_RABBITMQ_US_MANAGEMENT_HOST_PORT:-15672}:15672"
     depends_on:
       - floci-us
     networks:
@@ -92,8 +92,8 @@ services:
         exec socat TCP-LISTEN:15672,fork,reuseaddr
         TCP:${FLOCI_RABBITMQ_EU_HOST:-127.0.0.1}:15672
     ports:
-      - "5673:5672"
-      - "15673:15672"
+      - "${FLOCI_RABBITMQ_EU_HOST_PORT:-5673}:5672"
+      - "${FLOCI_RABBITMQ_EU_MANAGEMENT_HOST_PORT:-15673}:15672"
     depends_on:
       - floci-eu
     networks:
