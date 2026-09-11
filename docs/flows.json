@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Dual Message Flows: Synchronous HTTP vs Asynchronous Queue",
+    "output": "flows.html",
+    "viewBox": [1080, 560],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "http-sync",
+        "label": "Synchronous HTTP Flow",
+        "focus": ["client", "nginx", "app", "db"],
+        "note": "Blocking request-response lifecycle routed by X-Source-Region to local app and Aurora writer."
+      },
+      {
+        "id": "queue-async",
+        "label": "Asynchronous Queue Flow",
+        "focus": ["producer", "rabbit", "app", "db"],
+        "note": "Decoupled AMQP event ingestion processed independently by regional queue listeners."
+      },
+      {
+        "id": "dr-takeover",
+        "label": "DR Queue Takeover Flow",
+        "focus": ["app", "db", "rabbit"],
+        "note": "When a region fails, healthy brother region acquires DB lease and drains remote broker queues."
+      }
+    ]
+  },
+  "participants": [
+    { "id": "client", "type": "external", "label": "HTTP Client", "sublabel": "Browser / REST" },
+    { "id": "nginx", "type": "cloud", "label": "Nginx Router", "sublabel": "reverse proxy :8000" },
+    { "id": "app", "type": "backend", "label": "Spring Boot", "sublabel": "app-us :8080", "brand": "spring" },
+    { "id": "db", "type": "database", "label": "PostgreSQL", "sublabel": "Aurora & Leases", "brand": "postgresql" },
+    { "id": "rabbit", "type": "messagebus", "label": "RabbitMQ", "sublabel": "broker :5672", "brand": "rabbitmq" },
+    { "id": "producer", "type": "external", "label": "Event Producer", "sublabel": "order service" }
+  ],
+  "segments": [
+    { "from": 150, "to": 260, "label": "1. Synchronous HTTP Flow (REST API)" },
+    { "from": 270, "to": 380, "label": "2. Asynchronous Queue Flow (AMQP Messaging)" },
+    { "from": 390, "to": 480, "label": "3. DR Queue Takeover via DB Lease" }
+  ],
+  "messages": [
+    { "id": "http-req", "from": "client", "to": "nginx", "y": 160, "label": "POST /api/products [X-Source-Region]", "variant": "emphasis" },
+    { "id": "proxy-fwd", "from": "nginx", "to": "app", "y": 188, "label": "forward to local app", "variant": "default" },
+    { "id": "db-write", "from": "app", "to": "db", "y": 216, "label": "SQL INSERT product (global writer)", "variant": "emphasis" },
+    { "id": "client-resp", "from": "app", "to": "client", "y": 244, "label": "201 Created (JSON response)", "variant": "return" },
+
+    { "id": "amqp-pub", "from": "producer", "to": "rabbit", "y": 280, "label": "publish order.created (async AMQP)", "variant": "emphasis" },
+    { "id": "queue-dispatch", "from": "rabbit", "to": "app", "y": 308, "label": "deliver to @RabbitListener", "variant": "default" },
+    { "id": "app-process", "from": "app", "to": "db", "y": 336, "label": "persist order state in DB", "variant": "default" },
+    { "id": "amqp-ack", "from": "app", "to": "rabbit", "y": 364, "label": "basicAck (dequeue)", "variant": "dashed" },
+
+    { "id": "poll-dr", "from": "app", "to": "db", "y": 400, "label": "poll queue_region_status lease", "variant": "default" },
+    { "id": "connect-remote", "from": "app", "to": "rabbit", "y": 428, "label": "connect dynamic listener to remote broker", "variant": "emphasis" },
+    { "id": "drain-queue", "from": "rabbit", "to": "app", "y": 456, "label": "drain remote broker queue", "variant": "dashed" }
+  ],
+  "activations": [
+    { "participant": "nginx", "from": 160, "to": 195, "type": "cloud" },
+    { "participant": "app", "from": 188, "to": 250, "type": "backend" },
+    { "participant": "db", "from": 216, "to": 240, "type": "database" },
+    { "participant": "rabbit", "from": 280, "to": 370, "type": "messagebus" },
+    { "participant": "app", "from": 308, "to": 370, "type": "backend" },
+    { "participant": "app", "from": 400, "to": 465, "type": "backend" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Synchronous HTTP Flow", "items": ["Inbound REST requests route via Nginx using X-Source-Region", "Immediate blocking response; mutations route to global writer"] },
+    { "dot": "emerald", "title": "Asynchronous Queue Flow", "items": ["AMQP events publish decoupled into regional RabbitMQ brokers", "Local listener containers process messages with retry & DLQ"] },
+    { "dot": "violet", "title": "DR Queue Takeover", "items": ["Queue failover uses PostgreSQL lease coordination, not Nginx", "Surviving region dynamically drains failed region's queues"] }
+  ]
+}
