@@ -6,6 +6,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.6-blue)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
 [![Architecture Map](https://img.shields.io/badge/Architecture_Map-Interactive_Explorer-blue?logo=google-chrome&logoColor=white)](https://tuannx.github.io/spring-boot-multi-region-ha/)
+[![Message Flows](https://img.shields.io/badge/Message_Flows-HTTP_vs_Queue-purple?logo=rabbitmq&logoColor=white)](https://tuannx.github.io/spring-boot-multi-region-ha/flows.html)
 [![GitHub Pages](https://img.shields.io/badge/GitHub_Pages-Live_Diagram-brightgreen?logo=github)](https://tuannx.github.io/spring-boot-multi-region-ha/)
 
 A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** `failover2` plugin. This project simulates Aurora topology and control-plane state with local PostgreSQL instances, including bounded failover detection, runtime writer routing, nginx request routing, and region-aware health monitoring.
@@ -66,6 +67,25 @@ The architecture deliberately separates read and write routing:
 - **Compute — source region:** nginx sends a request to the application region matching `X-Source-Region`; the selected app then applies the writer/reader rules above.
 
 In the local demo the initial writer is `postgres-us`, and the demonstrated switchover moves it to `postgres-eu`. “Follow the sun” describes this controlled ownership handoff; it is not an automatic clock-based scheduler or an active-active/multi-writer design.
+
+### Dual Communication Pipelines: Synchronous HTTP vs Asynchronous Queue
+
+The system distinguishes two separate message flows with different reliability and failover contracts:
+
+1. **Synchronous HTTP Ingress (REST API)**: Client requests arrive through `nginx-router` (:8000), routed to regional compute nodes via `X-Source-Region`. Reads execute against local PostgreSQL (Home-Region Reads), while mutations route synchronously to the global writer (Follow-the-Sun Writer).
+2. **Asynchronous Event Ingress (AMQP Queue)**: Events publish to regional RabbitMQ brokers and are consumed by dedicated local Spring Boot listener containers (`orders` queue, retry queue, and DLQ). During a regional disaster recovery (DR) outage, listener takeover is governed by PostgreSQL lease coordination (`queue_region_status`), allowing the surviving region to dynamically take over and drain remote queues without involving Nginx.
+
+<p align="center">
+  <a href="https://tuannx.github.io/spring-boot-multi-region-ha/flows.html">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/flows-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="docs/assets/flows-light.png">
+      <img alt="Dual Message Flows: Synchronous HTTP vs Asynchronous Queue" src="docs/assets/flows-dark.png" width="100%">
+    </picture>
+  </a>
+  <br>
+  <em>Figure 2: Synchronous HTTP Request Lifecycle vs Asynchronous Queue Event Processing & DR Takeover. <a href="https://tuannx.github.io/spring-boot-multi-region-ha/flows.html">👉 Open Interactive Sequence Flow Explorer</a>.</em>
+</p>
 
 ## Features
 
