@@ -94,10 +94,10 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 
 ### Available cases
 
-| Case | Write model | Local consistency | Acceptance |
-|------|-------------|-------------------|------------|
-| Aurora/PostgreSQL (root stack) | Fenced single global writer | Writer authority + home-region reads | `./scripts/e2e-acceptance.sh --start --cleanup --verify-failover` |
-| [Cassandra](cases/cassandra/README.md) | Active-active across two datacenters | `LOCAL_QUORUM`, RF=3 per DC | `./scripts/cassandra-e2e.sh --start --cleanup` |
+| Case | Write model | Local consistency | Interactive Architecture | Acceptance |
+|------|-------------|-------------------|--------------------------|------------|
+| Aurora/PostgreSQL (root stack) | Fenced single global writer | Writer authority + home-region reads | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/) | `./scripts/e2e-acceptance.sh --start --cleanup --verify-failover` |
+| [Cassandra](cases/cassandra/README.md) | Active-active across two datacenters | `LOCAL_QUORUM`, RF=3 per DC | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html) | `./scripts/cassandra-e2e.sh --start --cleanup` |
 
 The cases are separate because their failure semantics are different. The
 Cassandra flow moves traffic to the surviving application/datacenter during a

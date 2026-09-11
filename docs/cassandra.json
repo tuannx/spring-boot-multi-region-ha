@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Cassandra Multi-Region Active-Active Architecture",
+    "output": "docs/cassandra.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "active-active-writes",
+        "label": "Active-Active regional writes",
+        "focus": ["client", "router", "app_us", "app_eu"],
+        "note": "Both regions accept local writes independently with LOCAL_QUORUM consistency."
+      },
+      {
+        "id": "cross-dc-sync",
+        "label": "Cross-DC replication",
+        "focus": ["cas_us1", "cas_us2", "cas_us3", "cas_eu1", "cas_eu2", "cas_eu3"],
+        "note": "Asynchronous replication across datacenters with NetworkTopologyStrategy (RF=3)."
+      },
+      {
+        "id": "failover-routing",
+        "label": "Regional outage failover",
+        "focus": ["router", "app_eu", "cas_eu1"],
+        "note": "During US outage, global router steers all traffic to EU; missed writes sync upon recovery."
+      }
+    ]
+  },
+  "components": [
+    { "id": "client", "type": "external", "label": "Client Traffic", "sublabel": "HTTP / X-Source-Region", "pos": [40, 310], "size": [130, 60] },
+    { "id": "router", "type": "cloud", "label": "Global Router", "sublabel": "nginx :8100", "pos": [220, 310], "size": [130, 60], "tag": "failover router" },
+    { "id": "app_us", "type": "backend", "label": "app-us", "sublabel": "Spring Boot :8180", "brand": "spring", "pos": [430, 190], "size": [130, 60], "tag": "local DC" },
+    { "id": "cas_us1", "type": "database", "label": "cassandra-us-1", "sublabel": "seed node :9042", "pos": [640, 190], "size": [135, 60], "tag": "rack 1a" },
+    { "id": "cas_us2", "type": "database", "label": "cassandra-us-2", "sublabel": "peer node", "pos": [810, 190], "size": [125, 60], "tag": "rack 1b" },
+    { "id": "cas_us3", "type": "database", "label": "cassandra-us-3", "sublabel": "peer node", "pos": [965, 190], "size": [125, 60], "tag": "rack 1c" },
+    { "id": "app_eu", "type": "backend", "label": "app-eu", "sublabel": "Spring Boot :8181", "brand": "spring", "pos": [430, 430], "size": [130, 60], "tag": "local DC" },
+    { "id": "cas_eu1", "type": "database", "label": "cassandra-eu-1", "sublabel": "seed node :9142", "pos": [640, 430], "size": [135, 60], "tag": "rack 1a" },
+    { "id": "cas_eu2", "type": "database", "label": "cassandra-eu-2", "sublabel": "peer node", "pos": [810, 430], "size": [125, 60], "tag": "rack 1b" },
+    { "id": "cas_eu3", "type": "database", "label": "cassandra-eu-3", "sublabel": "peer node", "pos": [965, 430], "size": [125, 60], "tag": "rack 1c" }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Datacenter 1: us-east-1 (RF=3)", "wraps": ["app_us", "cas_us1", "cas_us2", "cas_us3"], "pad": 24 },
+    { "kind": "region", "label": "Datacenter 2: eu-west-1 (RF=3)", "wraps": ["app_eu", "cas_eu1", "cas_eu2", "cas_eu3"], "pad": 24 }
+  ],
+  "connections": [
+    { "from": "client", "to": "router", "label": "HTTP", "variant": "emphasis" },
+    { "from": "router", "to": "app_us", "label": "us-east-1", "fromSide": "right", "toSide": "left" },
+    { "from": "router", "to": "app_eu", "label": "eu-west-1", "fromSide": "right", "toSide": "left" },
+    { "from": "app_us", "to": "cas_us1", "label": "LOCAL_QUORUM", "variant": "emphasis" },
+    { "from": "cas_us1", "to": "cas_us2", "variant": "dashed" },
+    { "from": "cas_us2", "to": "cas_us3", "variant": "dashed" },
+    { "from": "app_eu", "to": "cas_eu1", "label": "LOCAL_QUORUM", "variant": "emphasis" },
+    { "from": "cas_eu1", "to": "cas_eu2", "variant": "dashed" },
+    { "from": "cas_eu2", "to": "cas_eu3", "variant": "dashed" },
+    { "from": "cas_us1", "to": "cas_eu1", "label": "cross-DC replication", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelDy": 40 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Active-Active Writes", "items": ["Both regions accept local writes independently with LOCAL_QUORUM", "No single writer bottleneck; lower write latency for all users"] },
+    { "dot": "emerald", "title": "Datacenter-Local Isolation", "items": ["Java driver contacts only local Cassandra nodes to preserve latency and SLAs", "Losing one node per region still maintains full local quorum availability"] },
+    { "dot": "violet", "title": "Cross-DC Sync & Failover", "items": ["NetworkTopologyStrategy replicates rows asynchronously across datacenters", "Global router fails over traffic to surviving region during full DC outage"] }
+  ]
+}
