@@ -5,6 +5,8 @@
 [![AWS JDBC Driver](https://img.shields.io/badge/AWS%20JDBC%20Driver-4.4.0-orange)](https://github.com/awslabs/aws-advanced-jdbc-wrapper)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.6-blue)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
+[![Architecture Map](https://img.shields.io/badge/Architecture_Map-Interactive_Explorer-blue?logo=google-chrome&logoColor=white)](https://tuannx.github.io/spring-boot-multi-region-ha/)
+[![GitHub Pages](https://img.shields.io/badge/GitHub_Pages-Live_Diagram-brightgreen?logo=github)](https://tuannx.github.io/spring-boot-multi-region-ha/)
 
 A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** `failover2` plugin. This project simulates Aurora topology and control-plane state with local PostgreSQL instances, including bounded failover detection, runtime writer routing, nginx request routing, and region-aware health monitoring.
 
@@ -12,6 +14,21 @@ The repository also includes an independent
 [`Cassandra multi-region case`](cases/cassandra/README.md) for workloads that
 need active-active regional writes rather than Aurora's fenced single-writer
 model.
+
+<p align="center">
+  <a href="https://tuannx.github.io/spring-boot-multi-region-ha/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="docs/assets/architecture-light.png">
+      <img alt="Spring Boot Multi-Region High Availability Architecture" src="docs/assets/architecture-dark.png" width="100%">
+    </picture>
+  </a>
+  <br>
+  <em>Figure 1: Multi-Region Runtime Architecture with Follow-the-Sun Writer & Home Reads. <a href="https://tuannx.github.io/spring-boot-multi-region-ha/">👉 Open Interactive Architecture Explorer</a> (powered by <a href="https://github.com/tt-a1i/archify">Archify</a>).</em>
+</p>
+
+<details>
+<summary>Text-based Topology (ASCII)</summary>
 
 ```text
                          ┌─────────────────────────────────────────────┐
@@ -39,6 +56,8 @@ model.
                One global writer follows the active business region (“follow the sun”).
                Each app keeps reads in its own home region, independent of writer location.
 ```
+
+</details>
 
 The architecture deliberately separates read and write routing:
 
@@ -75,10 +94,10 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 
 ### Available cases
 
-| Case | Write model | Local consistency | Acceptance |
-|------|-------------|-------------------|------------|
-| Aurora/PostgreSQL (root stack) | Fenced single global writer | Writer authority + home-region reads | `./scripts/e2e-acceptance.sh --start --cleanup --verify-failover` |
-| [Cassandra](cases/cassandra/README.md) | Active-active across two datacenters | `LOCAL_QUORUM`, RF=3 per DC | `./scripts/cassandra-e2e.sh --start --cleanup` |
+| Case | Write model | Local consistency | Interactive Architecture | Acceptance |
+|------|-------------|-------------------|--------------------------|------------|
+| Aurora/PostgreSQL (root stack) | Fenced single global writer | Writer authority + home-region reads | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/) | `./scripts/e2e-acceptance.sh --start --cleanup --verify-failover` |
+| [Cassandra](cases/cassandra/README.md) | Active-active across two datacenters | `LOCAL_QUORUM`, RF=3 per DC | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html) | `./scripts/cassandra-e2e.sh --start --cleanup` |
 
 The cases are separate because their failure semantics are different. The
 Cassandra flow moves traffic to the surviving application/datacenter during a

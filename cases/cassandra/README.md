@@ -1,7 +1,25 @@
 # Cassandra Multi-Region Case
 
+[![Architecture Map](https://img.shields.io/badge/Architecture_Map-Interactive_Explorer-blue?logo=google-chrome&logoColor=white)](https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html)
+[![GitHub Pages](https://img.shields.io/badge/GitHub_Pages-Live_Diagram-brightgreen?logo=github)](https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html)
+
 This case demonstrates an active-active Apache Cassandra deployment with a
 Spring Boot application in two regions:
+
+<p align="center">
+  <a href="https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="../../docs/assets/cassandra-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset="../../docs/assets/cassandra-light.png">
+      <img alt="Cassandra Multi-Region Active-Active Architecture" src="../../docs/assets/cassandra-dark.png" width="100%">
+    </picture>
+  </a>
+  <br>
+  <em>Figure: Cassandra Multi-Region Active-Active Architecture with RF=3 per Datacenter. <a href="https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html">👉 Open Interactive Architecture Explorer</a> (powered by <a href="https://github.com/tt-a1i/archify">Archify</a>).</em>
+</p>
+
+<details>
+<summary>Text-based Topology (ASCII)</summary>
 
 ```text
                        global router :8100
@@ -17,6 +35,8 @@ Spring Boot application in two regions:
                     ╲                   ╱
                      cross-DC replication
 ```
+
+</details>
 
 It is intentionally separate from the root Aurora/PostgreSQL case. Aurora uses
 a fenced single global writer; Cassandra accepts writes in both datacenters and

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Spring Boot Multi-Region High Availability",
+    "output": "docs/index.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "source-routing",
+        "label": "Source-region request routing",
+        "focus": ["client", "nginx", "app_us", "app_eu"],
+        "note": "Client requests route through Nginx based on X-Source-Region to local compute."
+      },
+      {
+        "id": "data-routing",
+        "label": "Follow-the-sun writer and home reads",
+        "focus": ["app_us", "app_eu", "postgres_us", "postgres_eu"],
+        "note": "Both apps write to the single global writer, while reads stay in the home region."
+      },
+      {
+        "id": "regional-queues",
+        "label": "Regional queues and lease coordination",
+        "focus": ["app_us", "rabbitmq_us", "app_eu", "rabbitmq_eu"],
+        "note": "Independent regional message brokers with database-backed failover takeover."
+      }
+    ]
+  },
+  "components": [
+    { "id": "client", "type": "external", "label": "Client Traffic", "sublabel": "HTTP / X-Source-Region", "pos": [40, 310], "size": [130, 60] },
+    { "id": "nginx", "type": "cloud", "label": "Nginx Router", "sublabel": "reverse proxy :8000", "pos": [230, 310], "size": [130, 60] },
+    { "id": "app_us", "type": "backend", "label": "app-us", "sublabel": "Spring Boot :8080", "brand": "spring", "pos": [460, 190], "size": [130, 60], "tag": "primary" },
+    { "id": "postgres_us", "type": "database", "label": "postgres-us", "sublabel": "Aurora Writer :5432", "brand": "postgresql", "pos": [700, 190], "size": [140, 60], "tag": "active writer" },
+    { "id": "rabbitmq_us", "type": "messagebus", "label": "rabbitmq-us", "sublabel": "broker :5672", "brand": "rabbitmq", "pos": [930, 190], "size": [130, 60] },
+    { "id": "app_eu", "type": "backend", "label": "app-eu", "sublabel": "Spring Boot :8081", "brand": "spring", "pos": [460, 430], "size": [130, 60], "tag": "secondary" },
+    { "id": "postgres_eu", "type": "database", "label": "postgres-eu", "sublabel": "Aurora Reader :5432", "brand": "postgresql", "pos": [700, 430], "size": [140, 60], "tag": "failover target" },
+    { "id": "rabbitmq_eu", "type": "messagebus", "label": "rabbitmq-eu", "sublabel": "broker :5672", "brand": "rabbitmq", "pos": [930, 430], "size": [130, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Region 1: us-east-1 (Primary Writer)", "wraps": ["app_us", "postgres_us", "rabbitmq_us"], "pad": 24 },
+    { "kind": "region", "label": "Region 2: eu-west-1 (Secondary / DR)", "wraps": ["app_eu", "postgres_eu", "rabbitmq_eu"], "pad": 24 }
+  ],
+  "connections": [
+    { "from": "client", "to": "nginx", "label": "HTTP", "variant": "emphasis" },
+    { "from": "nginx", "to": "app_us", "label": "us-east-1", "fromSide": "right", "toSide": "left" },
+    { "from": "nginx", "to": "app_eu", "label": "eu-west-1", "fromSide": "right", "toSide": "left" },
+    { "from": "app_us", "to": "postgres_us", "label": "reads + writes", "variant": "emphasis" },
+    { "from": "app_eu", "to": "postgres_eu", "label": "home reads" },
+    { "from": "app_eu", "to": "postgres_us", "label": "cross-region writes", "variant": "dashed", "fromSide": "top", "toSide": "left", "via": [[525, 330], [660, 330], [660, 220]] },
+    { "from": "postgres_us", "to": "postgres_eu", "label": "storage replication", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelDy": 40 },
+    { "from": "app_us", "to": "rabbitmq_us", "label": "events", "variant": "dashed", "fromSide": "top", "toSide": "top", "via": [[525, 120], [995, 120]] },
+    { "from": "app_eu", "to": "rabbitmq_eu", "label": "events", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom", "via": [[525, 560], [995, 560]] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Follow-the-Sun Writer", "items": ["All application mutations send writes to the authoritative global writer (postgres-us initially)", "Verified switchover moves writer authority to postgres-eu without multi-writer divergence"] },
+    { "dot": "emerald", "title": "Home-Region Reads", "items": ["Each app region reads from its local database instance (postgres-us or postgres-eu)", "Zero cross-region latency penalty for high-volume read traffic"] },
+    { "dot": "violet", "title": "Dynamic DR Queue Takeover", "items": ["Regional RabbitMQ brokers maintain isolated async messaging in each region", "Database-backed lease coordination lets surviving region take over queue listeners during outage"] }
+  ]
+}
