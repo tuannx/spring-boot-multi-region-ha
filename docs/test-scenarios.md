@@ -41,6 +41,14 @@
 |------|--------|--------|--------|
 | **WritePool** | AWS JDBC Wrapper (failover2+dev) | Global writer instance | Topology discovery → auto-route tới instance có SESSION_ID='MASTER_SESSION_ID' |
 | **ReadPool** | AWS JDBC Wrapper (failover2+dev) | Home region reader | Ưu tiên home region, nếu home region fail → fallback tới region kia |
+| **PrimaryProbePool** | AWS JDBC Wrapper (plugins disabled) | Configured active writer | Bounded health probe; không tự failover để failover monitor nhận đúng trạng thái authority |
+| **LocalAdminPool** | AWS JDBC Wrapper (plugins disabled) | Local region database | Fencing/promotion control-plane queries; routing do application orchestration quản lý |
+| **PromotedWriterPool** | AWS JDBC Wrapper (plugins disabled) | Configured promoted writer | Future writes sau promotion; route do application-level failover state quản lý |
+
+Tất cả pool vật lý của application đều dùng URL `jdbc:aws-wrapper:postgresql://` và
+driver `software.amazon.jdbc.Driver`. Chỉ `WritePool` và `ReadPool` bật
+`failover2,dev`; các pool control-plane vẫn dùng wrapper nhưng tắt plugin để
+không che khuất kết quả probe hoặc làm thay đổi semantics fencing.
 
 ---
 
@@ -230,4 +238,3 @@ After recovery: Full restore to Phase 1 topology.
   - Hoặc dùng `pg_terminate_backend` để force HikariCP reconnect
   - Hoặc dùng EFM plugin + cluster endpoint DNS (real Aurora)
 - **clusterTopologyRefreshRateMs**: Đã config 5000ms (5s) để tăng tốc detect topology change, nhưng failover2 vẫn cần connection failure để trigger re-route.
-

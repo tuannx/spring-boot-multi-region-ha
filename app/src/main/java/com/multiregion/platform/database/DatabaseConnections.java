@@ -19,6 +19,10 @@ import java.util.Properties;
 public class DatabaseConnections {
 
     private static final Logger log = LoggerFactory.getLogger(DatabaseConnections.class);
+    private static final String ADVANCED_JDBC_DRIVER = "software.amazon.jdbc.Driver";
+    private static final String ADVANCED_JDBC_URL_PREFIX = "jdbc:aws-wrapper:";
+    private static final String FAILOVER_PLUGINS = "failover2,dev";
+    private static final String NO_PLUGINS = "";
 
     private final String dbUser;
     private final String dbPass;
@@ -121,46 +125,37 @@ public class DatabaseConnections {
     public DataSource readDataSource() {
         String localReaderHost = resolvedLocalDbHost();
         String url = awsWrapperUrl(localReaderHost, localDbPort);
-        log.info("ReadPool (home region): region={} host={} port={}",
-                awsRegion, localReaderHost, localDbPort);
+        log.info("ReadPool (home region): region={} host={} url={}",
+                awsRegion, localReaderHost, url);
         return wrapperDataSource(url, "ReadPool-" + awsRegion, 20, true);
     }
 
     @Bean
     public DataSource primaryProbeDataSource() {
-        String url = directPostgresUrl(activeWriterDbHost, activeWriterDbPort);
-        log.info("PrimaryProbePool (bounded direct probe): region={} host={} url={}",
+        String url = advancedJdbcUrl(activeWriterDbHost, activeWriterDbPort);
+        log.info("PrimaryProbePool (bounded wrapper probe): region={} host={} url={}",
                 awsRegion, activeWriterDbHost, url);
-
-        HikariDataSource dataSource = directDataSource(
-                url, "PrimaryProbePool-" + awsRegion, 2, 0);
-        dataSource.setReadOnly(true);
-        return dataSource;
+        return advancedJdbcDataSource(
+                url, "PrimaryProbePool-" + awsRegion, 2, 0, true, NO_PLUGINS);
     }
 
     @Bean
     public DataSource localAdminDataSource() {
         String host = resolvedLocalDbHost();
-        String url = directPostgresUrl(host, localDbPort);
-        log.info("LocalAdminPool (local control plane): region={} host={} url={}",
+        String url = advancedJdbcUrl(host, localDbPort);
+        log.info("LocalAdminPool (wrapper-backed local control plane): region={} host={} url={}",
                 awsRegion, host, url);
-
-        HikariDataSource dataSource = directDataSource(
-                url, "LocalAdminPool-" + awsRegion, 2, 0);
-        dataSource.setReadOnly(false);
-        return dataSource;
+        return advancedJdbcDataSource(
+                url, "LocalAdminPool-" + awsRegion, 2, 0, false, NO_PLUGINS);
     }
 
     @Bean
     public DataSource promotedWriterDataSource() {
-        String url = directPostgresUrl(failoverWriterDbHost, failoverWriterDbPort);
-        log.info("PromotedWriterPool (global failover writer): region={} host={} url={}",
+        String url = advancedJdbcUrl(failoverWriterDbHost, failoverWriterDbPort);
+        log.info("PromotedWriterPool (wrapper-backed global failover writer): region={} host={} url={}",
                 awsRegion, failoverWriterDbHost, url);
-
-        HikariDataSource dataSource = directDataSource(
-                url, "PromotedWriterPool-" + awsRegion, 10, 2);
-        dataSource.setReadOnly(false);
-        return dataSource;
+        return advancedJdbcDataSource(
+                url, "PromotedWriterPool-" + awsRegion, 10, 2, false, NO_PLUGINS);
     }
 
     private HikariDataSource wrapperDataSource(
@@ -168,10 +163,23 @@ public class DatabaseConnections {
             String poolName,
             int maximumPoolSize,
             boolean readOnly) {
+        return advancedJdbcDataSource(
+                url, poolName, maximumPoolSize, 2, readOnly, FAILOVER_PLUGINS);
+    }
+
+    private HikariDataSource advancedJdbcDataSource(
+            String url,
+            String poolName,
+            int maximumPoolSize,
+            int minimumIdle,
+            boolean readOnly,
+            String plugins) {
+        requireAdvancedJdbcUrl(url);
+
         Properties properties = new Properties();
         properties.setProperty("user", dbUser);
         properties.setProperty("password", dbPass);
-        properties.setProperty("wrapperPlugins", "failover2,dev");
+        properties.setProperty("wrapperPlugins", plugins);
         properties.setProperty("wrapperDialect", "pg");
         properties.setProperty("failoverHomeRegion", failoverHomeRegion);
         properties.setProperty("clusterInstanceHostPattern", clusterInstancePattern);
@@ -181,28 +189,9 @@ public class DatabaseConnections {
         properties.setProperty("socketTimeout", "5");
 
         HikariDataSource dataSource = new HikariDataSource();
+        dataSource.setDriverClassName(ADVANCED_JDBC_DRIVER);
         dataSource.setJdbcUrl(url);
         dataSource.setDataSourceProperties(properties);
-        dataSource.setPoolName(poolName);
-        dataSource.setMaximumPoolSize(maximumPoolSize);
-        dataSource.setMinimumIdle(2);
-        dataSource.setConnectionTimeout(5000);
-        dataSource.setIdleTimeout(30000);
-        dataSource.setMaxLifetime(60000);
-        dataSource.setConnectionTestQuery("SELECT 1");
-        dataSource.setReadOnly(readOnly);
-        return dataSource;
-    }
-
-    private HikariDataSource directDataSource(
-            String url,
-            String poolName,
-            int maximumPoolSize,
-            int minimumIdle) {
-        HikariDataSource dataSource = new HikariDataSource();
-        dataSource.setJdbcUrl(url);
-        dataSource.setUsername(dbUser);
-        dataSource.setPassword(dbPass);
         dataSource.setPoolName(poolName);
         dataSource.setMaximumPoolSize(maximumPoolSize);
         dataSource.setMinimumIdle(minimumIdle);
@@ -211,16 +200,23 @@ public class DatabaseConnections {
         dataSource.setIdleTimeout(30000);
         dataSource.setMaxLifetime(60000);
         dataSource.setConnectionTestQuery("SELECT 1");
+        dataSource.setReadOnly(readOnly);
         return dataSource;
     }
 
     private String awsWrapperUrl(String host, int port) {
-        return "jdbc:aws-wrapper:postgresql://" + host + ":" + port + "/" + dbName;
+        return advancedJdbcUrl(host, port);
     }
 
-    private String directPostgresUrl(String host, int port) {
-        return "jdbc:postgresql://" + host + ":" + port + "/" + dbName
-                + "?connectTimeout=5&socketTimeout=5&tcpKeepAlive=true";
+    private String advancedJdbcUrl(String host, int port) {
+        return ADVANCED_JDBC_URL_PREFIX + "postgresql://" + host + ":" + port + "/" + dbName;
+    }
+
+    private void requireAdvancedJdbcUrl(String url) {
+        if (!url.startsWith(ADVANCED_JDBC_URL_PREFIX)) {
+            throw new IllegalArgumentException(
+                    "All application database pools must use the AWS Advanced JDBC Wrapper: " + url);
+        }
     }
 
     private String resolvedLocalDbHost() {

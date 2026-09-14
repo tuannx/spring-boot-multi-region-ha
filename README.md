@@ -2,7 +2,7 @@
 
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen)](https://spring.io/projects/spring-boot)
 [![Java](https://img.shields.io/badge/Java-26.0.2-orange)](https://jdk.java.net/26/)
-[![AWS JDBC Driver](https://img.shields.io/badge/AWS%20JDBC%20Driver-4.4.0-orange)](https://github.com/awslabs/aws-advanced-jdbc-wrapper)
+[![AWS JDBC Driver](https://img.shields.io/badge/AWS%20JDBC%20Driver-4.4.0-orange)](https://github.com/aws/aws-advanced-jdbc-wrapper)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.6-blue)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
 [![Architecture Map](https://img.shields.io/badge/Architecture_Map-Interactive_Explorer-blue?logo=google-chrome&logoColor=white)](https://tuannx.github.io/spring-boot-multi-region-ha/)
@@ -333,15 +333,17 @@ This project models a single-writer multi-region deployment, not active-active w
 
 ### The AWS Advanced JDBC Wrapper
 
-This project uses the [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws-advanced-jdbc-wrapper) version 4.4.0, which extends the PostgreSQL JDBC driver with Aurora-aware connection handling:
+This project uses the [AWS Advanced JDBC Wrapper](https://github.com/aws/aws-advanced-jdbc-wrapper) version 4.4.0, which extends the PostgreSQL JDBC driver with Aurora-aware connection handling. All five application database pools use the wrapper URL and explicitly select `software.amazon.jdbc.Driver`, so a control-plane pool cannot silently fall back to the PostgreSQL driver:
 
 1. **Topology Discovery**: `pg_catalog.aurora_replica_status()` identifies the current writer and topology.
 
-2. **Bounded primary probe**: The failover monitor uses a small direct PostgreSQL pool rather than entering the wrapper's failover loop; connection, socket, statement, and wrapper failover timeouts are five seconds.
+2. **Bounded primary probe**: The failover monitor uses a small wrapper-backed pool with `wrapperPlugins=""`, so the wrapper is mandatory while the probe still observes the configured writer directly instead of entering a failover loop; connection, socket, statement, and wrapper failover timeouts are five seconds.
 
-3. **Connection Routing**: Writer connections from both apps initially go to `postgres-us`; each reader connection stays in the app's home region. Promotion changes only the effective global writer route to `postgres-eu` without rebuilding the process; home-region read routes remain unchanged.
+3. **Pool-wide wrapper contract**: `WritePool` and `ReadPool` use `wrapperPlugins=failover2,dev`. `PrimaryProbePool`, `LocalAdminPool`, and `PromotedWriterPool` keep the wrapper but disable plugins because application-level health, fencing, and promotion logic owns those control-plane transitions.
 
-4. **Failover Handling**:
+4. **Connection Routing**: Writer connections from both apps initially go to `postgres-us`; each reader connection stays in the app's home region. Promotion changes only the effective global writer route to `postgres-eu` without rebuilding the process; home-region read routes remain unchanged.
+
+5. **Failover Handling**:
    - Three consecutive connectivity failures trigger a promotion decision, but unfenced promotion is refused by default.
    - Planned promotion proceeds only when authoritative topology already names the local failover target. `FAILOVER_ALLOW_UNFENCED_PROMOTION=true` is an explicit unsafe demo opt-in.
    - Query timeout, schema, permission, and pool-exhaustion errors do not count as evidence that the primary is unreachable.
@@ -575,8 +577,8 @@ environment names such as `QUEUES_LISTENERTYPE` and
 | `CLUSTER_INSTANCE_PATTERN` | — | Wildcard pattern for topology |
 | `ACTIVE_WRITER_DB_HOST` | `postgres-us` | Active single-writer database host |
 | `ACTIVE_WRITER_DB_PORT` | `5432` | Active single-writer database port |
-| `LOCAL_DB_HOST` | Region local | Direct local database host used for promotion control and local authority checks |
-| `LOCAL_DB_PORT` | `5432` | Direct local promotion-control database port |
+| `LOCAL_DB_HOST` | Region local | Wrapper-backed local database host used for promotion control and local authority checks |
+| `LOCAL_DB_PORT` | `5432` | Wrapper-backed local promotion-control database port |
 | `FAILOVER_WRITER_DB_HOST` | `postgres-eu` | Authoritative promoted-writer host used by both compute regions after switchover |
 | `FAILOVER_WRITER_DB_PORT` | `5432` | Promoted-writer database port |
 | `FAILOVER_FAILURE_THRESHOLD` | `3` | Consecutive primary-unreachable probes required before a promotion decision |
@@ -603,7 +605,8 @@ Real Aurora PostgreSQL exposes `aurora_replica_status()` and related functions n
 ### Failover detection strategy
 
 The scheduling `FailoverListener` checks the primary every 15 seconds on a
-dedicated scheduler and through a bounded direct-probe port. Queue reconciliation
+dedicated scheduler and through a bounded wrapper-based probe pool with
+connection-switching plugins disabled. Queue reconciliation
 uses a separate two-thread scheduler, so a database probe cannot stall queue
 ownership work. `FailoverOrchestrator` owns promotion state without holding a
 monitor lock across JDBC I/O. A secondary promotes only when authoritative
@@ -663,7 +666,7 @@ java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
 - [Cassandra Multi-Region Case](cases/cassandra/README.md) — runnable two-datacenter active-active topology with regional traffic failover
 - [RPO Failure Modes Reference](docs/rpo-failure-modes-reference.md) — 13 warm-standby, active-active, and cross-cutting RPO failure scenarios with detection queries and Spring Boot remediation patterns
 - [Test Scenarios](docs/test-scenarios.md) — Timeline-based failover and k6 validation scenarios for the current local stack
-- [AWS Advanced JDBC Wrapper](https://github.com/awslabs/aws-advanced-jdbc-wrapper) — The official AWS JDBC wrapper with Aurora failover support
+- [AWS Advanced JDBC Wrapper](https://github.com/aws/aws-advanced-jdbc-wrapper) — The official AWS JDBC wrapper with Aurora failover support
 - [AWS Aurora Global Database](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database.html) — Multi-region Aurora architecture
 - [Spring Boot Reference](https://docs.spring.io/spring-boot/docs/current/reference/htmlsingle/) — Official Spring Boot documentation
 - [Spring Cloud AWS](https://awspring.io/) — Spring integration with AWS services
