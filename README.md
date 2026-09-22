@@ -371,6 +371,17 @@ The US region's init SQL identifies the local node as `postgres-us`; the EU regi
 
 ## Testing Failover
 
+### QuickPerf scheduled takeover checks
+
+```bash
+gradle -p app test --tests '*ScheduledTakeoverQuickPerfTest' --rerun-tasks
+```
+
+QuickPerf enforces one SELECT per scheduled takeover tick, with no writes,
+across healthy, failed, recovered, expired, local-down, slow-listener and
+1,000-queue scenarios. These tests also run in the normal `gradle -p app test`
+CI gate. See [measurement scope and results](docs/quickperf-takeover.md).
+
 ### Automated Failover Test
 
 ```bash

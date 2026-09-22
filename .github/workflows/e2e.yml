@@ -41,6 +41,16 @@ jobs:
       - name: Validate Cassandra case Compose model
         run: docker compose -f cases/cassandra/docker-compose.yml config --quiet
 
+      - name: Upload application test and QuickPerf measurements
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: application-test-reports
+          path: |
+            app/build/test-results/test/
+            app/build/reports/tests/test/
+          if-no-files-found: ignore
+
       - name: Run Docker end-to-end acceptance
         run: ./scripts/e2e-acceptance.sh --start --cleanup --verify-failover
 
