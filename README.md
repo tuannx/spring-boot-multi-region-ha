@@ -2,6 +2,7 @@
 
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen)](https://spring.io/projects/spring-boot)
 [![Java](https://img.shields.io/badge/Java-26.0.2-orange)](https://jdk.java.net/26/)
+[![Project Leyden](https://img.shields.io/badge/Project%20Leyden-AOT%20Cache-blue)](docs/project-leyden-aot.md)
 [![AWS JDBC Driver](https://img.shields.io/badge/AWS%20JDBC%20Driver-4.4.0-orange)](https://github.com/aws/aws-advanced-jdbc-wrapper)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.6-blue)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
@@ -92,6 +93,7 @@ The system distinguishes two separate message flows with different reliability a
 - **Multi-region topology**: Simulates two AWS regions (us-east-1 and eu-west-1)
 - **Follow-the-sun writer**: One global writer can move between regions through a fenced, verified switchover
 - **Home-region readers**: Each application reads from its own regional database regardless of writer location
+- **Project Leyden AOT Cache**: Pre-computed Ahead-of-Time class loading and linking on OpenJDK/Corretto 26 (~50% context startup reduction) without breaking reflection or native reachability
 - **AWS JDBC Wrapper**: Failover-aware initial writer/reader pools via `failover2`
 - **Failover detection and activation**: Secondary region detects primary outage and activates only after writer authority is verified (unless the unsafe demo opt-in is enabled)
 - **Manual failover**: Admin endpoint for forced failover activation
