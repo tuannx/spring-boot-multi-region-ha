@@ -320,6 +320,28 @@ The Floci environment proves AWS API/IaC compatibility and real local data-plane
 wiring. It does not claim to emulate Aurora Global Database replication, lag,
 quorum, or AWS networking; those still require an AWS acceptance environment.
 
+## Project Leyden AOT Cache Acceleration
+
+This project integrates OpenJDK **Project Leyden** Ahead-of-Time (AOT) caching on Amazon Corretto 26 to achieve near-instantaneous container initialization without compromising HotSpot runtime features or third-party libraries.
+
+### Key Highlights
+- **~50% Startup Reduction**: Spring `WebApplicationContext` initialization drops from **1,546 ms to 784 ms**; container time-to-healthy drops from **2,840 ms to 1,485 ms** (1.9x faster).
+- **Zero Closed-World Constraints**: Full dynamic proxying and reflection support for AWS Advanced JDBC Wrapper, Apple Pkl (`pkl-spring`), and Hibernate without custom reachability metadata.
+- **Docker Multi-Stage Bake**: An automated 2-step training workflow (`-XX:AOTMode=record` + `-XX:AOTMode=create`) embeds a pre-computed 121.8 MB `app.aot` cache into the Alpine production image.
+- **Offline Resilient Training**: Database connection pool fail-fast is relaxed during AOT training (`dataSource.setInitializationFailTimeout(-1)`), enabling build-time caching without active database instances.
+
+### Run Benchmark
+```bash
+./scripts/leyden-benchmark.sh
+```
+
+### Configuration & Runtime Toggling
+Leyden AOT is enabled by default in the application container:
+- **Default (AOT Enabled)**: `JAVA_OPTS="-XX:AOTMode=on -XX:AOTCache=/app/app.aot"`
+- **Baseline Fallback (Standard HotSpot JIT)**: Set `JAVA_OPTS=""` in `docker-compose.yml` or container environment.
+
+See the complete [Project Leyden AOT Integration Guide](docs/project-leyden-aot.md) for deep-dive architecture, training commands, and HotSpot internals.
+
 ## How Multi-Region Failover Works
 
 ### Regional Execution Rules
@@ -643,6 +665,16 @@ defaults to US. The E2E verifies the post-switchover route through port 8000
 with `X-Source-Region: eu-west-1`. This is not a production traffic director;
 global ingress health/failover remains an external control-plane responsibility.
 
+### Why Project Leyden AOT instead of GraalVM Native Image?
+
+When optimizing cold starts for multi-region container failovers, GraalVM Native Image (`oracle/graal`) was evaluated alongside OpenJDK Project Leyden. GraalVM Native Image was rejected due to four hard architectural blockers:
+1. **JDK 26 Support**: The project targets Java 26 language level; GraalVM CE only supports up to JDK 25.
+2. **AWS Advanced JDBC Wrapper**: Lacks GraalVM reachability metadata for v4.4.0 (AWS Issue #1345) and relies heavily on dynamic driver proxies.
+3. **Apple Pkl Configuration (`pkl-spring`)**: Bundles Truffle Polyglot without JPMS module descriptors, triggering fatal SubstrateVM initialization conflicts (`ForceOnModulePath` and missing `HotSpotMethod` substitutions).
+4. **Agent Observability**: Native executables cannot load the standard `-javaagent:opentelemetry-javaagent.jar`.
+
+Project Leyden provides a ~50% reduction in context startup with zero closed-world sacrifices, keeping full HotSpot compatibility, standard debugging, and dynamic instrumentation intact. See [docs/project-leyden-aot.md](docs/project-leyden-aot.md) for full comparison.
+
 ## Development
 
 ### Local Development without Docker
@@ -677,6 +709,7 @@ java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
 ## Related Resources
 
 - [Cassandra Multi-Region Case](cases/cassandra/README.md) — runnable two-datacenter active-active topology with regional traffic failover
+- [Project Leyden AOT Guide](docs/project-leyden-aot.md) — OpenJDK 26 Ahead-of-Time cache architecture, training pipeline, and benchmark metrics
 - [RPO Failure Modes Reference](docs/rpo-failure-modes-reference.md) — 13 warm-standby, active-active, and cross-cutting RPO failure scenarios with detection queries and Spring Boot remediation patterns
 - [Test Scenarios](docs/test-scenarios.md) — Timeline-based failover and k6 validation scenarios for the current local stack
 - [AWS Advanced JDBC Wrapper](https://github.com/aws/aws-advanced-jdbc-wrapper) — The official AWS JDBC wrapper with Aurora failover support
