@@ -28,6 +28,9 @@ public class JdbcQueueRegionStateStore implements QueueRegionStateStore {
 
     @PostConstruct
     public void initialize() {
+        if ("onRefresh".equals(System.getProperty("spring.context.exit"))) {
+            return;
+        }
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS queue_region_status (
               queue_name varchar(128) NOT NULL,

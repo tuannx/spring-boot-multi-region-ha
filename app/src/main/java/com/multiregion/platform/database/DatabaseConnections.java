@@ -199,6 +199,7 @@ public class DatabaseConnections {
         dataSource.setValidationTimeout(2000);
         dataSource.setIdleTimeout(30000);
         dataSource.setMaxLifetime(60000);
+        dataSource.setInitializationFailTimeout(-1);
         dataSource.setConnectionTestQuery("SELECT 1");
         dataSource.setReadOnly(readOnly);
         return dataSource;
