@@ -1,0 +1,19 @@
+version: 1
+preset: jvm/spring-boot
+project:
+  working-directory: app
+plugins:
+  diff:
+    uses: core/diff
+  build:
+    uses: jvm/build
+    needs: [diff]
+  test:
+    uses: jvm/test
+    needs: [build]
+  structure:
+    uses: exec
+    needs: [diff]
+  report:
+    uses: reporter/github
+    needs: [test, structure]
