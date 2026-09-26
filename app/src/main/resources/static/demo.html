@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Region HA — Live Demo Console</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #101418;
+    --panel: #1a2027;
+    --panel-2: #222b34;
+    --border: #2e3843;
+    --text: #e8ecf1;
+    --muted: #a9b4c0;
+    --green: #3fb950;
+    --green-dim: #1c4d2a;
+    --red: #f0506e;
+    --red-dim: #5c1f2b;
+    --amber: #d29922;
+    --amber-dim: #4d3a12;
+    --teal: #39c5cf;
+    --blue: #6cb6ff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 20px;
+    background: #0b0e11;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    flex-wrap: wrap;
+  }
+  .topbar h1 { font-size: 16px; margin: 0; font-weight: 650; white-space: nowrap; }
+  .topbar h1 span { color: var(--muted); font-weight: 400; }
+  .writer-badge {
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--amber-dim);
+    color: #f5c86e;
+    border: 1px solid var(--amber);
+    border-radius: 4px;
+    padding: 3px 10px;
+    white-space: nowrap;
+  }
+  .writer-badge.flash { background: var(--amber); color: #1a1405; }
+  .spacer { flex: 1; }
+  .clock { font-family: var(--mono); color: var(--muted); font-size: 13px; }
+  .poll { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
+  .dot.bad { background: var(--red); }
+  .dot.paused { background: var(--amber); }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    background: var(--panel);
+  }
+  .toolbar label { color: var(--muted); font-size: 12px; }
+  .toolbar input {
+    background: #0b0e11;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    width: 210px;
+  }
+  button {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { background: #2c3846; }
+  button.primary { background: #1c5c2e; border-color: var(--green); }
+  button.primary:hover { background: #25703a; }
+  button.warn { background: #5c4413; border-color: var(--amber); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(300px, 4fr);
+    gap: 12px;
+    padding: 12px 20px 20px;
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 12px;
+  }
+  .panel > h2 {
+    margin: 0;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .panel .body { padding: 12px 14px; }
+  .regions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .regions { grid-template-columns: 1fr; } }
+  .region {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .region header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: #0b0e11;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .region header strong { font-size: 14px; }
+  .chip {
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 4px;
+    padding: 2px 8px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .chip.up { color: #7ee787; border-color: var(--green); background: var(--green-dim); }
+  .chip.down { color: #ff9dab; border-color: var(--red); background: var(--red-dim); }
+  .chip.warn { color: #f5c86e; border-color: var(--amber); background: var(--amber-dim); }
+  .chip.info { color: #a9d6ff; border-color: var(--blue); background: #1d3348; }
+  .chip.dim { color: var(--muted); border-color: var(--border); }
+  .kv { display: grid; grid-template-columns: 108px 1fr; gap: 3px 8px; padding: 10px 12px; font-size: 13px; }
+  .kv dt { color: var(--muted); margin: 0; }
+  .kv dd { margin: 0; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+  table.mini { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+  table.mini th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px 12px; border-top: 1px solid var(--border); }
+  table.mini td { padding: 4px 12px; border-top: 1px solid var(--border); }
+  table.mini tr.writer td { color: #f5c86e; }
+  svg.topo { width: 100%; height: auto; display: block; }
+  svg.topo text { font-family: var(--mono); }
+  .node rect { fill: var(--panel-2); stroke: var(--border); stroke-width: 1.5; }
+  .node .name { fill: var(--text); font-size: 13px; font-weight: 700; }
+  .node .sub { fill: var(--muted); font-size: 10.5px; }
+  .node.writer rect { stroke: var(--amber); stroke-width: 2; }
+  .node.writer .sub { fill: #f5c86e; }
+  .node.down rect { stroke: var(--red); stroke-dasharray: 5 4; }
+  .node.down .sub { fill: var(--red); }
+  .link { fill: none; stroke-width: 1.5; }
+  .link.route { stroke: #4a5563; }
+  .link.read { stroke: var(--teal); stroke-dasharray: 3 5; }
+  .link.write { stroke: var(--amber); stroke-width: 2.5; stroke-dasharray: 10 7; animation: dashmove 0.9s linear infinite; }
+  .legend { display: flex; gap: 16px; padding: 8px 14px 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 26px; height: 0; border-top: 2.5px solid var(--amber); vertical-align: middle; margin-right: 6px; }
+  .legend i.read { border-top: 2px dashed var(--teal); }
+  .legend i.route { border-top: 2px solid #4a5563; }
+  @keyframes dashmove { to { stroke-dashoffset: -17; } }
+  @media (prefers-reduced-motion: reduce) { .link.write { animation: none; } }
+  .actions { display: flex; flex-direction: column; gap: 8px; }
+  .actions .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions p { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .actions code {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    background: #0b0e11;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text);
+  }
+  ol.timeline { list-style: none; margin: 0; padding: 0; max-height: 560px; overflow-y: auto; }
+  ol.timeline li {
+    display: flex;
+    gap: 8px;
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+    align-items: baseline;
+  }
+  ol.timeline time { font-family: var(--mono); color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+  .tag {
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 3px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    border: 1px solid;
+  }
+  .tag.writer { color: #f5c86e; border-color: var(--amber); }
+  .tag.health { color: #7ee787; border-color: var(--green); }
+  .tag.alarm { color: #ff9dab; border-color: var(--red); }
+  .tag.queue { color: #a9d6ff; border-color: var(--blue); }
+  .tag.write { color: #7fd7dd; border-color: var(--teal); }
+  .tag.action { color: var(--text); border-color: var(--muted); }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 20px 24px; }
+  footer code { font-family: var(--mono); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>Multi-Region HA <span>— live demo console</span></h1>
+  <div class="writer-badge" id="globalWriter">writer: …</div>
+  <div class="spacer"></div>
+  <div class="poll"><span class="dot" id="pollDot"></span><span id="pollText">polling 2s</span></div>
+  <div class="clock" id="clock">--:--:--</div>
+</header>
+
+<div class="toolbar">
+  <label for="usBase">US app</label>
+  <input id="usBase" value="http://localhost:8080" spellcheck="false">
+  <label for="euBase">EU app</label>
+  <input id="euBase" value="http://localhost:8081" spellcheck="false">
+  <button id="applyBtn">Apply</button>
+  <button id="pauseBtn">Pause</button>
+  <button id="exportBtn">Export evidence (.md)</button>
+</div>
+
+<div class="layout">
+  <div>
+    <section class="panel">
+      <h2>Request topology — writes follow the sun, reads stay home</h2>
+      <div class="body" style="padding:6px 8px 0">
+        <svg class="topo" viewBox="0 0 760 330" role="img" aria-label="Multi-region request topology">
+          <path class="link route" d="M380 54 L180 106"/>
+          <path class="link route" d="M380 54 L580 106"/>
+          <path class="link read" d="M152 170 L152 230"/>
+          <path class="link read" d="M608 170 L608 230"/>
+          <g id="writesToUs">
+            <path class="link write" d="M208 170 L204 230"/>
+            <path class="link write" d="M556 152 C 420 168, 320 190, 232 232"/>
+          </g>
+          <g id="writesToEu" visibility="hidden">
+            <path class="link write" d="M204 152 C 340 168, 440 190, 528 232"/>
+            <path class="link write" d="M552 170 L556 230"/>
+          </g>
+          <g class="node" id="nRouter">
+            <rect x="305" y="8" width="150" height="46" rx="6"/>
+            <text class="name" x="380" y="28" text-anchor="middle">nginx-router</text>
+            <text class="sub" x="380" y="44" text-anchor="middle">:8000 X-Source-Region</text>
+          </g>
+          <g class="node" id="nAppUs">
+            <rect x="105" y="106" width="150" height="60" rx="6"/>
+            <text class="name" x="180" y="128" text-anchor="middle">app-us :8080</text>
+            <text class="sub" id="nAppUsSub" x="180" y="145" text-anchor="middle">…</text>
+            <text class="sub" id="nAppUsSub2" x="180" y="159" text-anchor="middle"></text>
+          </g>
+          <g class="node" id="nAppEu">
+            <rect x="505" y="106" width="150" height="60" rx="6"/>
+            <text class="name" x="580" y="128" text-anchor="middle">app-eu :8081</text>
+            <text class="sub" id="nAppEuSub" x="580" y="145" text-anchor="middle">…</text>
+            <text class="sub" id="nAppEuSub2" x="580" y="159" text-anchor="middle"></text>
+          </g>
+          <g class="node" id="nPgUs">
+            <rect x="105" y="232" width="150" height="60" rx="6"/>
+            <text class="name" x="180" y="254" text-anchor="middle">postgres-us</text>
+            <text class="sub" id="nPgUsSub" x="180" y="271" text-anchor="middle">…</text>
+            <text class="sub" id="nPgUsSub2" x="180" y="285" text-anchor="middle"></text>
+          </g>
+          <g class="node" id="nPgEu">
+            <rect x="505" y="232" width="150" height="60" rx="6"/>
+            <text class="name" x="580" y="254" text-anchor="middle">postgres-eu</text>
+            <text class="sub" id="nPgEuSub" x="580" y="271" text-anchor="middle">…</text>
+            <text class="sub" id="nPgEuSub2" x="580" y="285" text-anchor="middle"></text>
+          </g>
+        </svg>
+        <div class="legend">
+          <span><i></i>writes → global writer</span>
+          <span><i class="read"></i>reads → home region</span>
+          <span><i class="route"></i>nginx source-region route</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Region state (live)</h2>
+      <div class="body">
+        <div class="regions">
+          <div class="region" id="cardUs">
+            <header><strong>us-east-1</strong><span class="chip dim" data-f="status">…</span><span class="chip dim" data-f="role">…</span><span class="chip dim" data-f="mode">…</span></header>
+            <dl class="kv">
+              <dt>app</dt><dd data-f="app">…</dd>
+              <dt>database</dt><dd data-f="db">…</dd>
+              <dt>writer node</dt><dd data-f="writer">…</dd>
+              <dt>queues</dt><dd data-f="queues">…</dd>
+            </dl>
+            <table class="mini"><thead><tr><th colspan="3">topology</th></tr></thead><tbody data-f="topo"></tbody></table>
+          </div>
+          <div class="region" id="cardEu">
+            <header><strong>eu-west-1</strong><span class="chip dim" data-f="status">…</span><span class="chip dim" data-f="role">…</span><span class="chip dim" data-f="mode">…</span></header>
+            <dl class="kv">
+              <dt>app</dt><dd data-f="app">…</dd>
+              <dt>database</dt><dd data-f="db">…</dd>
+              <dt>writer node</dt><dd data-f="writer">…</dd>
+              <dt>queues</dt><dd data-f="queues">…</dd>
+            </dl>
+            <table class="mini"><thead><tr><th colspan="3">topology</th></tr></thead><tbody data-f="topo"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div>
+    <section class="panel">
+      <h2>Scenario actions</h2>
+      <div class="body actions">
+        <p>1 — Prove writer/reader split: write through one region, then read from both.</p>
+        <div class="row">
+          <button id="writeUsBtn">Write via US app</button>
+          <button id="writeEuBtn">Write via EU app</button>
+        </div>
+        <p>2 — Prove fencing: EU activation is refused while US still holds the writer.</p>
+        <div class="row">
+          <button id="tryActivateBtn">Try EU activate (expect 503)</button>
+        </div>
+        <p>3 — Fence US (control-plane step, run in terminal), then activate EU here.</p>
+        <code id="fenceCmd">docker exec multiregion-us psql -U appuser -d appdb -c "SELECT pg_catalog.set_writer_mode(false);"</code>
+        <div class="row">
+          <button id="copyFenceBtn">Copy fence command</button>
+          <button id="activateEuBtn" class="primary">Activate EU writer</button>
+        </div>
+        <p>4 — Queue drill: mark a regional queue DOWN and watch the brother region take over.</p>
+        <div class="row">
+          <button id="qDownBtn" class="warn">orders/us DOWN</button>
+          <button id="qUpBtn">orders/us UP</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Event timeline</h2>
+      <ol class="timeline" id="timeline"></ol>
+    </section>
+  </div>
+</div>
+
+<footer>
+  Dashboard polls <code>/demo/status</code> on both apps every 2s (falls back to <code>/health</code> + <code>/admin/*</code>).
+  Override endpoints with <code>?us=&amp;eu=</code> query params. Served from either app or the nginx router.
+</footer>
+
+<script>
+"use strict";
+const params = new URLSearchParams(location.search);
+const cfg = {
+  us: params.get("us") || "http://localhost:8080",
+  eu: params.get("eu") || "http://localhost:8081",
+  intervalMs: 2000,
+};
+document.getElementById("usBase").value = cfg.us;
+document.getElementById("euBase").value = cfg.eu;
+
+function portOf(base, fallback) {
+  try {
+    return new URL(base).port || fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function updateNodePorts() {
+  document.querySelector("#nAppUs .name").textContent = "app-us :" + portOf(cfg.us, "8080");
+  document.querySelector("#nAppEu .name").textContent = "app-eu :" + portOf(cfg.eu, "8081");
+}
+updateNodePorts();
+
+const state = { us: null, eu: null, paused: false, timer: null, log: [] };
+
+function nowTime() {
+  return new Date().toLocaleTimeString("en-GB", { hour12: false });
+}
+
+function addTimeline(tag, cls, msg) {
+  const entry = { t: new Date().toISOString(), display: nowTime(), tag, cls, msg };
+  state.log.unshift(entry);
+  if (state.log.length > 80) state.log.pop();
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const ol = document.getElementById("timeline");
+  ol.innerHTML = "";
+  for (const e of state.log) {
+    const li = document.createElement("li");
+    const time = document.createElement("time");
+    time.textContent = e.display;
+    const tag = document.createElement("span");
+    tag.className = "tag " + e.cls;
+    tag.textContent = e.tag;
+    const msg = document.createElement("span");
+    msg.textContent = e.msg;
+    li.append(time, tag, msg);
+    ol.appendChild(li);
+  }
+}
+
+async function fetchJson(url, options, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs || 4000);
+  try {
+    const res = await fetch(url, { ...options, signal: ctrl.signal });
+    const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch (e) { body = { raw: text }; }
+    return { ok: res.ok, status: res.status, body };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function normalize(base, demo, health, topo, queues) {
+  if (demo) {
+    return {
+      reachable: true, base,
+      status: demo.status || "UP",
+      region: demo.region || "?",
+      role: demo.role || "?",
+      writerNode: demo.writerNode || "unknown",
+      dbConnected: demo.dbConnected !== false,
+      active: demo.active === true,
+      instances: demo.instances || [],
+      queues: demo.queues || { enabled: false },
+    };
+  }
+  return {
+    reachable: true, base,
+    status: (health && health.status) || "UP",
+    region: (health && health.region) || "?",
+    role: (health && health.role) || "?",
+    writerNode: (health && health.writerNode) || "unknown",
+    dbConnected: !health || health.dbConnected !== false,
+    active: !!health && health.active === true,
+    instances: (topo && topo.instances) || [],
+    queues: queues ? { enabled: true, ...queues } : { enabled: false },
+  };
+}
+
+async function pollOne(base) {
+  try {
+    const demo = await fetchJson(base + "/demo/status", {}, 4000);
+    if (demo.ok && demo.body) return normalize(base, demo.body, null, null, null);
+    if (demo.status !== 404) throw new Error("HTTP " + demo.status);
+    const [h, t, q] = await Promise.all([
+      fetchJson(base + "/health", {}, 4000),
+      fetchJson(base + "/admin/topology", {}, 4000),
+      fetchJson(base + "/admin/queues", {}, 4000),
+    ]);
+    if (!h.ok) throw new Error("HTTP " + h.status);
+    return normalize(base, null, h.body, t.body, q.ok ? q.body : null);
+  } catch (e) {
+    return { reachable: false, base, status: "DOWN", region: "?", role: "?",
+      writerNode: "unknown", dbConnected: false, active: false, instances: [],
+      queues: { enabled: false }, error: String(e && e.message || e) };
+  }
+}
+
+function chip(el, text, cls) {
+  el.textContent = text;
+  el.className = "chip " + cls;
+}
+
+function renderCard(cardId, snap, label) {
+  const card = document.getElementById(cardId);
+  const f = (name) => card.querySelector('[data-f="' + name + '"]');
+  if (!snap || !snap.reachable) {
+    chip(f("status"), "UNREACHABLE", "down");
+    chip(f("role"), "?", "dim");
+    chip(f("mode"), "?", "dim");
+    f("app").textContent = "no response from " + label;
+    f("db").textContent = "—";
+    f("writer").textContent = "—";
+    f("queues").textContent = "—";
+    f("topo").innerHTML = "";
+    return;
+  }
+  chip(f("status"), snap.status, snap.status === "UP" ? "up" : "warn");
+  chip(f("role"), snap.role, "info");
+  chip(f("mode"), snap.active ? "ACTIVE" : "standby", snap.active ? "warn" : "dim");
+  f("app").textContent = snap.status + " (" + snap.base + ")";
+  f("db").textContent = snap.dbConnected ? "connected" : "DISCONNECTED";
+  f("writer").textContent = snap.writerNode;
+  const q = snap.queues || {};
+  if (!q.enabled) {
+    f("queues").textContent = "disabled";
+  } else if (q.error) {
+    f("queues").textContent = "error: " + q.error;
+  } else {
+    const states = (q.states || []).map((s) => s.queueName + "/" + s.region + "=" + s.status).join(", ");
+    const running = (q.runningAssignments || []).map((a) => a.queueName + "@" + a.ownerRegion + ":" + a.mode).join(", ");
+    f("queues").textContent = (states || "no states") + " | running: " + (running || "none");
+  }
+  const tbody = f("topo");
+  tbody.innerHTML = "";
+  for (const inst of snap.instances) {
+    const tr = document.createElement("tr");
+    if (inst.isWriter) tr.className = "writer";
+    const tdId = document.createElement("td");
+    tdId.textContent = (inst.isWriter ? "● " : "○ ") + inst.serverId;
+    const tdCpu = document.createElement("td");
+    tdCpu.textContent = "cpu " + inst.cpu;
+    const tdLag = document.createElement("td");
+    tdLag.textContent = "lag " + inst.lagMs + "ms";
+    tr.append(tdId, tdCpu, tdLag);
+    tbody.appendChild(tr);
+  }
+}
+
+function setNode(id, subId, sub2Id, line1, line2, cls) {
+  const node = document.getElementById(id);
+  node.classList.remove("writer", "down");
+  if (cls) node.classList.add(cls);
+  document.getElementById(subId).textContent = line1;
+  if (sub2Id) document.getElementById(sub2Id).textContent = line2 || "";
+}
+
+function renderTopo() {
+  const us = state.us, eu = state.eu;
+  const writer = (us && us.reachable && us.writerNode !== "unknown") ? us.writerNode
+    : (eu && eu.reachable ? eu.writerNode : "unknown");
+  const badge = document.getElementById("globalWriter");
+  const prev = badge.dataset.writer || "";
+  badge.textContent = "writer: " + writer;
+  badge.dataset.writer = writer;
+  if (prev && prev !== writer) {
+    badge.classList.add("flash");
+    setTimeout(() => badge.classList.remove("flash"), 1600);
+  }
+  document.getElementById("writesToUs").setAttribute("visibility", writer === "postgres-eu" ? "hidden" : "visible");
+  document.getElementById("writesToEu").setAttribute("visibility", writer === "postgres-eu" ? "visible" : "hidden");
+
+  if (us && us.reachable) {
+    setNode("nAppUs", "nAppUsSub", "nAppUsSub2",
+      us.role + (us.active ? " · ACTIVE" : " · standby"),
+      "db " + (us.dbConnected ? "connected" : "DOWN"), us.dbConnected ? "" : "down");
+  } else {
+    setNode("nAppUs", "nAppUsSub", "nAppUsSub2", "UNREACHABLE", "", "down");
+  }
+  if (eu && eu.reachable) {
+    setNode("nAppEu", "nAppEuSub", "nAppEuSub2",
+      eu.role + (eu.active ? " · ACTIVE" : " · standby"),
+      "db " + (eu.dbConnected ? "connected" : "DOWN"), eu.dbConnected ? "" : "down");
+  } else {
+    setNode("nAppEu", "nAppEuSub", "nAppEuSub2", "UNREACHABLE", "", "down");
+  }
+  const topo = (us && us.reachable && us.instances.length ? us.instances
+    : (eu && eu.reachable ? eu.instances : []));
+  const info = (id) => topo.find((i) => i.serverId === id);
+  const usDb = info("postgres-us"), euDb = info("postgres-eu");
+  setNode("nPgUs", "nPgUsSub", "nPgUsSub2",
+    usDb ? (usDb.isWriter ? "WRITER" : "reader") : "…",
+    usDb ? ("lag " + usDb.lagMs + "ms") : "", usDb && usDb.isWriter ? "writer" : "");
+  setNode("nPgEu", "nPgEuSub", "nPgEuSub2",
+    euDb ? (euDb.isWriter ? "WRITER" : "reader") : "…",
+    euDb ? ("lag " + euDb.lagMs + "ms") : "", euDb && euDb.isWriter ? "writer" : "");
+}
+
+function runningKey(snap) {
+  if (!snap || !snap.reachable || !snap.queues || !snap.queues.enabled) return "";
+  return (snap.queues.runningAssignments || [])
+    .map((a) => a.queueName + "@" + a.ownerRegion + ":" + a.mode).sort().join("|");
+}
+
+function detectChanges(prev, next, label) {
+  if (!prev || !next) return;
+  if (prev.reachable !== next.reachable) {
+    addTimeline(next.reachable ? "HEALTH" : "ALARM", next.reachable ? "health" : "alarm",
+      label + (next.reachable ? " reachable again" : " UNREACHABLE (" + (next.error || "no response") + ")"));
+  }
+  if (next.reachable) {
+    if (prev.writerNode !== next.writerNode) {
+      addTimeline("WRITER", "writer", label + " writer: " + prev.writerNode + " → " + next.writerNode);
+    }
+    if (prev.active !== next.active) {
+      addTimeline("HEALTH", "health", label + (next.active ? " became ACTIVE" : " returned to standby"));
+    }
+    if (prev.dbConnected !== next.dbConnected) {
+      addTimeline(next.dbConnected ? "HEALTH" : "ALARM", next.dbConnected ? "health" : "alarm",
+        label + " database " + (next.dbConnected ? "reconnected" : "DISCONNECTED"));
+    }
+    if (runningKey(prev) !== runningKey(next)) {
+      addTimeline("QUEUE", "queue", label + " listeners: [" + (runningKey(prev) || "none") + "] → [" + (runningKey(next) || "none") + "]");
+    }
+  }
+}
+
+async function poll() {
+  if (state.paused) return;
+  const dot = document.getElementById("pollDot");
+  try {
+    const [us, eu] = await Promise.all([pollOne(cfg.us), pollOne(cfg.eu)]);
+    detectChanges(state.us, us, "us-east-1");
+    detectChanges(state.eu, eu, "eu-west-1");
+    state.us = us;
+    state.eu = eu;
+    renderCard("cardUs", us, cfg.us);
+    renderCard("cardEu", eu, cfg.eu);
+    renderTopo();
+    const bad = !us.reachable || !eu.reachable || !us.dbConnected || !eu.dbConnected;
+    dot.className = "dot" + (bad ? " bad" : "");
+    document.getElementById("pollText").textContent = "polling 2s · updated " + nowTime();
+  } catch (e) {
+    dot.className = "dot bad";
+  }
+}
+async function writeVia(base, label) {
+  const name = "demo-" + Date.now().toString(36);
+  addTimeline("ACTION", "action", "POST " + label + "/api/products {name: " + name + "}");
+  try {
+    const created = await fetchJson(base + "/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, price: 9.99 }),
+    }, 15000);
+    if (!created.ok || !created.body || !created.body.id) {
+      addTimeline("ALARM", "alarm", "write via " + label + " failed: HTTP " + created.status);
+      return;
+    }
+    const id = created.body.id;
+    addTimeline("WRITE", "write", "created id=" + id + " via " + label + " (row region=" + created.body.region + ")");
+    const [viaUs, viaEu] = await Promise.all([
+      fetchJson(cfg.us + "/api/products/" + id, {}, 6000),
+      fetchJson(cfg.eu + "/api/products/" + id, {}, 6000),
+    ]);
+    addTimeline("WRITE", "write",
+      "read id=" + id + ": us-east-1 → " + (viaUs.ok ? "FOUND (writer)" : "HTTP " + viaUs.status)
+      + " · eu-west-1 → " + (viaEu.ok ? "FOUND (writer)" : "HTTP " + viaEu.status + " (home-read)"));
+  } catch (e) {
+    addTimeline("ALARM", "alarm", "write via " + label + " error: " + (e && e.message || e));
+  }
+}
+
+async function activateEu(expectRefuse) {
+  addTimeline("ACTION", "action", "POST eu-west-1/admin/failover-activate" + (expectRefuse ? " (fencing check)" : ""));
+  try {
+    const res = await fetchJson(cfg.eu + "/admin/failover-activate", { method: "POST" }, 15000);
+    if (res.ok) {
+      addTimeline("WRITER", "writer", "EU activation ACCEPTED: " + ((res.body && res.body.message) || "ok"));
+    } else {
+      addTimeline(expectRefuse ? "HEALTH" : "ALARM", expectRefuse ? "health" : "alarm",
+        "EU activation refused HTTP " + res.status + ": " + ((res.body && res.body.error) || "see response"));
+    }
+  } catch (e) {
+    addTimeline("ALARM", "alarm", "EU activation error: " + (e && e.message || e));
+  }
+}
+
+async function queueMark(region, status) {
+  addTimeline("ACTION", "action", "POST /admin/queues/orders/" + region + "/" + status.toLowerCase());
+  try {
+    const bases = [cfg.us, cfg.eu];
+    for (const base of bases) {
+      await fetchJson(base + "/admin/queues/orders/" + region + "/" + status.toLowerCase()
+        + "?reason=demo-console-drill", { method: "POST" }, 8000);
+    }
+    addTimeline("QUEUE", "queue", "orders/" + region + " marked " + status + " — watch takeover assignments");
+  } catch (e) {
+    addTimeline("ALARM", "alarm", "queue mark error: " + (e && e.message || e));
+  }
+}
+
+function copyFence() {
+  const cmd = document.getElementById("fenceCmd").textContent;
+  const done = () => addTimeline("ACTION", "action", "fence command copied — paste it in a terminal, then Activate EU");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(cmd).then(done, () => addTimeline("ALARM", "alarm", "clipboard blocked — copy the command manually"));
+  } else {
+    const ta = document.createElement("textarea");
+    ta.value = cmd;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); done(); }
+    catch (e) { addTimeline("ALARM", "alarm", "clipboard blocked — copy the command manually"); }
+    document.body.removeChild(ta);
+  }
+}
+
+function snapshotLine(label, snap) {
+  if (!snap) return "- " + label + ": no data yet";
+  if (!snap.reachable) return "- " + label + ": UNREACHABLE (" + (snap.error || "no response") + ")";
+  return "- " + label + ": status=" + snap.status + " role=" + snap.role
+    + " active=" + snap.active + " dbConnected=" + snap.dbConnected
+    + " writerNode=" + snap.writerNode;
+}
+
+function exportEvidence() {
+  const lines = [];
+  lines.push("# Demo evidence — " + new Date().toISOString());
+  lines.push("");
+  lines.push("Endpoints: us=" + cfg.us + " eu=" + cfg.eu);
+  lines.push("");
+  lines.push("## Final snapshot");
+  lines.push(snapshotLine("us-east-1", state.us));
+  lines.push(snapshotLine("eu-west-1", state.eu));
+  lines.push("");
+  lines.push("## Timeline (newest first)");
+  for (const e of state.log) {
+    lines.push("- " + e.t + " [" + e.tag + "] " + e.msg);
+  }
+  if (!state.log.length) lines.push("- (no events captured)");
+  const blob = new Blob([lines.join("\n") + "\n"], { type: "text/markdown" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "demo-evidence-" + new Date().toISOString().replace(/[:.]/g, "-") + ".md";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  addTimeline("ACTION", "action", "evidence exported (" + state.log.length + " events)");
+}
+
+function setPaused(paused) {
+  state.paused = paused;
+  document.getElementById("pauseBtn").textContent = paused ? "Resume" : "Pause";
+  document.getElementById("pollDot").className = "dot" + (paused ? " paused" : "");
+  document.getElementById("pollText").textContent = paused ? "paused" : "polling 2s";
+}
+
+document.getElementById("applyBtn").addEventListener("click", () => {
+  cfg.us = document.getElementById("usBase").value.replace(/\/$/, "");
+  cfg.eu = document.getElementById("euBase").value.replace(/\/$/, "");
+  const url = new URL(location.href);
+  url.searchParams.set("us", cfg.us);
+  url.searchParams.set("eu", cfg.eu);
+  history.replaceState(null, "", url);
+  updateNodePorts();
+  addTimeline("ACTION", "action", "endpoints updated: us=" + cfg.us + " eu=" + cfg.eu);
+  poll();
+});
+document.getElementById("pauseBtn").addEventListener("click", () => setPaused(!state.paused));
+document.getElementById("exportBtn").addEventListener("click", exportEvidence);
+document.getElementById("writeUsBtn").addEventListener("click", () => writeVia(cfg.us, "us-east-1"));
+document.getElementById("writeEuBtn").addEventListener("click", () => writeVia(cfg.eu, "eu-west-1"));
+document.getElementById("tryActivateBtn").addEventListener("click", () => activateEu(true));
+document.getElementById("activateEuBtn").addEventListener("click", () => activateEu(false));
+document.getElementById("copyFenceBtn").addEventListener("click", copyFence);
+document.getElementById("qDownBtn").addEventListener("click", () => queueMark("us-east-1", "DOWN"));
+document.getElementById("qUpBtn").addEventListener("click", () => queueMark("us-east-1", "UP"));
+
+setInterval(() => { document.getElementById("clock").textContent = nowTime(); }, 1000);
+document.getElementById("clock").textContent = nowTime();
+addTimeline("ACTION", "action", "console started — polling " + cfg.us + " and " + cfg.eu);
+poll();
+state.timer = setInterval(poll, cfg.intervalMs);
+</script>
+</body>
+</html>

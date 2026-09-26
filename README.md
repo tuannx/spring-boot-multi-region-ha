@@ -125,6 +125,32 @@ The cases are separate because their failure semantics are different. The
 Cassandra flow moves traffic to the surviving application/datacenter during a
 complete regional outage; it does not reuse the Aurora writer-promotion code.
 
+### One-shot live demo (recommended)
+
+Runs the full HA story in a single command and writes timestamped evidence to
+`reports/demo/`:
+
+```bash
+./scripts/demo.sh --start --open
+```
+
+Then watch the live console at <http://localhost:8000/demo.html>: animated
+write/read paths, per-region health + topology + queue state, one-click
+writer/reader and fencing drills, and an event timeline with Markdown export.
+Add `--kill` for the kill-old-writer phase, `--pause` to step phases manually
+for presentations.
+
+**Baseline — writer in US, both regions healthy.** Note the timeline proving the
+writer/reader split: a row written via EU is FOUND from US (writer) but 404
+from EU (home-region read).
+
+![Live demo console at baseline: writer postgres-us, write paths converge on US](docs/assets/demo-console-baseline.png)
+
+**After switchover — writer in EU.** The badge, topology paths, and per-region
+tables all flip to `postgres-eu`; a write via the US app now lands in EU.
+
+![Live demo console after switchover: writer postgres-eu, write paths converge on EU](docs/assets/demo-console-failover.png)
+
 ### 1. Clone and start
 
 ```bash
