@@ -1,7 +1,7 @@
 # Build with Gradle 9.7.1 on the latest Java 26 patch release.
 FROM gradle:9.7.1-jdk26 AS gradle-distribution
 
-FROM amazoncorretto:26.0.2-alpine AS builder
+FROM amazoncorretto:27.0.0-alpine AS builder
 COPY --from=gradle-distribution /opt/gradle /opt/gradle
 ENV PATH="/opt/gradle/bin:${PATH}"
 WORKDIR /app
@@ -28,7 +28,7 @@ RUN mkdir -p /otel \
        --output /otel/opentelemetry-javaagent.jar \
     && echo "${OTEL_JAVAAGENT_SHA256}  /otel/opentelemetry-javaagent.jar" | sha256sum -c -s -
 
-FROM amazoncorretto:26.0.2-alpine
+FROM amazoncorretto:27.0.0-alpine
 WORKDIR /app
 RUN addgroup -S spring \
     && adduser -S -G spring spring \
