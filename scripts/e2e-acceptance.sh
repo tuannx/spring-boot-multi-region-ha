@@ -257,6 +257,19 @@ _, eu_products = request(eu_url, "GET", "/api/products")
 assert us_products and all(item["region"] == "us-east-1" for item in us_products), us_products
 assert eu_products and all(item["region"] == "eu-west-1" for item in eu_products), eu_products
 
+_, us_demo = request(us_url, "GET", "/demo/status")
+_, eu_demo = request(eu_url, "GET", "/demo/status")
+assert us_demo["region"] == "us-east-1" and us_demo["writerNode"], us_demo
+assert eu_demo["region"] == "eu-west-1" and eu_demo["writerNode"], eu_demo
+assert us_demo["writerNode"] == eu_demo["writerNode"], (us_demo, eu_demo)
+
+for root in (us_url, eu_url):
+    demo_req = urllib.request.Request(root + "/demo.html", method="GET")
+    with urllib.request.urlopen(demo_req, timeout=15) as demo_response:
+        assert demo_response.status == 200, root
+        demo_html = demo_response.read().decode("utf-8")
+        assert "live demo console" in demo_html, root
+
 product_name = f"e2e-writer-routing-{int(time.time())}"
 _, created = request(eu_url, "POST", "/api/products", {
     "name": product_name,

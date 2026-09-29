@@ -370,13 +370,30 @@
 <script>
 "use strict";
 const params = new URLSearchParams(location.search);
+const stored = (() => {
+  try {
+    return JSON.parse(localStorage.getItem("demoEndpoints") || "{}");
+  } catch (e) {
+    return {};
+  }
+})();
 const cfg = {
-  us: params.get("us") || "http://localhost:8080",
-  eu: params.get("eu") || "http://localhost:8081",
+  us: params.get("us") || stored.us || "http://localhost:8080",
+  eu: params.get("eu") || stored.eu || "http://localhost:8081",
   intervalMs: 2000,
 };
-document.getElementById("usBase").value = cfg.us;
-document.getElementById("euBase").value = cfg.eu;
+
+function saveEndpoints() {
+  try {
+    localStorage.setItem("demoEndpoints", JSON.stringify({ us: cfg.us, eu: cfg.eu }));
+  } catch (e) { /* private mode: polling still works, just not remembered */ }
+}
+
+function syncEndpointInputs() {
+  document.getElementById("usBase").value = cfg.us;
+  document.getElementById("euBase").value = cfg.eu;
+}
+syncEndpointInputs();
 
 function portOf(base, fallback) {
   try {
@@ -463,15 +480,16 @@ function normalize(base, demo, health, topo, queues) {
   };
 }
 
-async function pollOne(base) {
+async function pollOne(base, timeoutMs) {
+  const timeout = timeoutMs || 4000;
   try {
-    const demo = await fetchJson(base + "/demo/status", {}, 4000);
+    const demo = await fetchJson(base + "/demo/status", {}, timeout);
     if (demo.ok && demo.body) return normalize(base, demo.body, null, null, null);
     if (demo.status !== 404) throw new Error("HTTP " + demo.status);
     const [h, t, q] = await Promise.all([
-      fetchJson(base + "/health", {}, 4000),
-      fetchJson(base + "/admin/topology", {}, 4000),
-      fetchJson(base + "/admin/queues", {}, 4000),
+      fetchJson(base + "/health", {}, timeout),
+      fetchJson(base + "/admin/topology", {}, timeout),
+      fetchJson(base + "/admin/queues", {}, timeout),
     ]);
     if (!h.ok) throw new Error("HTTP " + h.status);
     return normalize(base, null, h.body, t.body, q.ok ? q.body : null);
@@ -750,6 +768,7 @@ document.getElementById("applyBtn").addEventListener("click", () => {
   url.searchParams.set("eu", cfg.eu);
   history.replaceState(null, "", url);
   updateNodePorts();
+  saveEndpoints();
   addTimeline("ACTION", "action", "endpoints updated: us=" + cfg.us + " eu=" + cfg.eu);
   poll();
 });
@@ -763,11 +782,42 @@ document.getElementById("copyFenceBtn").addEventListener("click", copyFence);
 document.getElementById("qDownBtn").addEventListener("click", () => queueMark("us-east-1", "DOWN"));
 document.getElementById("qUpBtn").addEventListener("click", () => queueMark("us-east-1", "UP"));
 
+async function resolveOne(key, label, fallbacks) {
+  const candidates = [];
+  for (const c of [cfg[key], ...fallbacks]) {
+    if (c && !candidates.includes(c)) candidates.push(c);
+  }
+  for (const candidate of candidates) {
+    const snap = await pollOne(candidate, 1500);
+    if (snap.reachable) {
+      if (candidate !== cfg[key]) {
+        addTimeline("ACTION", "action", label + " endpoint auto-resolved to " + candidate);
+        cfg[key] = candidate;
+      }
+      return snap;
+    }
+  }
+  return null;
+}
+
+async function init() {
+  const [us, eu] = await Promise.all([
+    resolveOne("us", "us-east-1", ["http://localhost:8080", "http://localhost:18080"]),
+    resolveOne("eu", "eu-west-1", ["http://localhost:8081"]),
+  ]);
+  if (us) state.us = us;
+  if (eu) state.eu = eu;
+  syncEndpointInputs();
+  updateNodePorts();
+  saveEndpoints();
+  addTimeline("ACTION", "action", "console started — polling " + cfg.us + " and " + cfg.eu);
+  poll();
+  state.timer = setInterval(poll, cfg.intervalMs);
+}
+
 setInterval(() => { document.getElementById("clock").textContent = nowTime(); }, 1000);
 document.getElementById("clock").textContent = nowTime();
-addTimeline("ACTION", "action", "console started — polling " + cfg.us + " and " + cfg.eu);
-poll();
-state.timer = setInterval(poll, cfg.intervalMs);
+init();
 </script>
 </body>
 </html>
