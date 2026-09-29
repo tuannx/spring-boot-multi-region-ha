@@ -8,6 +8,11 @@ updates:
       - "/cases/cassandra/app"
     schedule:
       interval: "weekly"
+    groups:
+      gradle-patch:
+        patch-all: true
+      gradle-minor:
+        minor-all: true
 
   # Base images used by each application Dockerfile.
   - package-ecosystem: "docker"
@@ -16,6 +21,11 @@ updates:
       - "/cases/cassandra/app"
     schedule:
       interval: "weekly"
+    groups:
+      docker-patch:
+        patch-all: true
+      docker-minor:
+        minor-all: true
 
   # Service images used by the root and Cassandra Compose stacks.
   - package-ecosystem: "docker-compose"
@@ -27,15 +37,30 @@ updates:
     ignore:
       # These images are built locally by the Compose stacks, not published.
       - dependency-name: "multiregion-*"
+    groups:
+      compose-patch:
+        patch-all: true
+      compose-minor:
+        minor-all: true
 
   # Floci infrastructure providers.
   - package-ecosystem: "terraform"
     directory: "/infra/floci/terraform"
     schedule:
       interval: "weekly"
+    groups:
+      terraform-patch:
+        patch-all: true
+      terraform-minor:
+        minor-all: true
 
   # Actions in .github/workflows are discovered from the repository root.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions-patch:
+        patch-all: true
+      actions-minor:
+        minor-all: true

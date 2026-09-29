@@ -76,6 +76,7 @@ test-results/
 test-output/
 reports/queue-takeover/
 reports/floci/
+reports/demo/
 *.test.js
 *.test.ts
 __pycache__/
