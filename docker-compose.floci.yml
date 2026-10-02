@@ -1,6 +1,6 @@
 services:
   floci-us:
-    image: floci/floci:2.0.1
+    image: floci/floci:2.1.0
     container_name: spring-ha-floci-us
     environment:
       FLOCI_DEFAULT_REGION: us-east-1
@@ -17,7 +17,7 @@ services:
       - floci-net
 
   floci-eu:
-    image: floci/floci:2.0.1
+    image: floci/floci:2.1.0
     container_name: spring-ha-floci-eu
     environment:
       FLOCI_DEFAULT_REGION: eu-west-1
