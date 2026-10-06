@@ -206,13 +206,52 @@ services:
       - multiregion-net
 
   # ============================================
-  # Nginx Router (Failover Simulation)
+  # ServiceTalk Locality Router (Default Ingress)
+  # ============================================
+  servicetalk-router:
+    build:
+      context: ./cases/servicetalk-router/app
+      dockerfile: Dockerfile
+    image: multiregion-servicetalk-router:latest
+    container_name: multiregion-router
+    restart: unless-stopped
+    environment:
+      ROUTER_PORT: 8085
+      US_ENDPOINT_HOST: app-us
+      US_ENDPOINT_PORT: 8080
+      EU_ENDPOINT_HOST: app-eu
+      EU_ENDPOINT_PORT: 8081
+      FAILURE_THRESHOLD: 3
+      COOLDOWN_MS: 5000
+      CONNECT_TIMEOUT_MS: 500
+      REQUEST_TIMEOUT_MS: 800
+    ports:
+      - "${ROUTER_HOST_PORT:-8000}:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      - app-us
+      - app-eu
+    networks:
+      multiregion-net:
+        aliases:
+          - router.local
+          - servicetalk-router.local
+
+  # ============================================
+  # Legacy Nginx Router (Optional Comparison)
   # ============================================
   nginx-router:
+    profiles:
+      - legacy-nginx
+      - comparison
     image: nginx:1.31.5-alpine
-    container_name: multiregion-router
+    container_name: multiregion-nginx-router
     ports:
-      - "${ROUTER_HOST_PORT:-8000}:80"
+      - "${NGINX_ROUTER_HOST_PORT:-8001}:80"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:

@@ -159,3 +159,26 @@ The router can be configured via environment variables:
 | `COOLDOWN_MS` / `OUTLIER_COOLDOWN_MS` | `5000` | Duration (ms) an outlier remains ejected from active pool |
 | `CONNECT_TIMEOUT_MS` | `500` | Netty socket connect timeout in milliseconds |
 | `REQUEST_TIMEOUT_MS` | `800` | Total upstream request timeout before fast-failover |
+
+---
+
+## 7. OpenTelemetry & SigNoz Observability (Before vs After)
+
+When paired with the repository's SigNoz observability stack (`docker-compose.observability.yml`), the router provides full distributed trace visibility that eliminates the legacy proxy blind spot:
+
+```text
+[Client] ──► [multiregion-router (ServiceTalk :8000)] ──► [multiregion-app (Spring Boot)] ──► [PostgreSQL]
+             └────────────── End-to-End Distributed Trace (W3C Context Propagation) ──────────────┘
+```
+
+| Observability Dimension | Before (Legacy Nginx Ingress) | After (ServiceTalk Locality Router) |
+| :--- | :--- | :--- |
+| **SigNoz Service Map Node** | **Missing**: Graph started directly at Spring Boot app | **Full Ingress Node**: `multiregion-router` linked to `multiregion-app` |
+| **Outage Trace Capture** | **0%**: 504 Gateway Timeouts were dropped without trace | **100%**: Router span captures error, timeout, and failover child span |
+| **5s Connect Timeout Visibility** | **Invisible**: Phantom latency not recorded in SigNoz | **Explicit**: Span displays 800ms upstream timeout clearly |
+| **Outlier Ejection Visualization** | **None**: Repeated blind attempts with 5s stalls | **Flamegraph shows direct P1 route** with 0ms latency penalty |
+| **W3C TraceContext Propagation** | Broken / unmanaged | Full `traceparent` and `tracestate` propagation |
+| **Routing Metadata Tags** | None | Headers `X-Routed-Priority`, `X-Routed-Region`, `X-Failover` |
+
+For full details on spinning up SigNoz and viewing live trace flamegraphs, see [docs/observability.md](../../docs/observability.md).
+

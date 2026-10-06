@@ -34,8 +34,8 @@ model.
 
 ```text
                          ┌─────────────────────────────────────────────┐
-                         │           nginx-router (port 8000)          │
-                         │    Routes requests to source/home region    │
+                         │      ServiceTalk Router (port 8000)         │
+                         │   Locality Priority (P0 -> P1) & Failover   │
                          └──────────┬──────────────────────┬───────────┘
                                     │                      │
                     ┌───────────────┘                      └───────────────┐
@@ -65,7 +65,7 @@ The architecture deliberately separates read and write routing:
 
 - **Writer — follow the sun:** both application regions send mutations to the same authoritative global writer. A fenced, verified switchover can move that writer from US to EU (or back); there is never more than one writer.
 - **Reader — home region:** `app-us` reads from `postgres-us`, while `app-eu` reads from `postgres-eu`. Moving the writer does not move the normal read route.
-- **Compute — source region:** nginx sends a request to the application region matching `X-Source-Region`; the selected app then applies the writer/reader rules above.
+- **Compute — source region:** ServiceTalk router sends a request to the application region matching `X-Source-Region` (P0 local priority) with fast failover (P1) if unhealthy; the selected app then applies the writer/reader rules above.
 
 In the local demo the initial writer is `postgres-us`, and the demonstrated switchover moves it to `postgres-eu`. “Follow the sun” describes this controlled ownership handoff; it is not an automatic clock-based scheduler or an active-active/multi-writer design.
 
@@ -73,7 +73,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 
 The system distinguishes two separate message flows with different reliability and failover contracts:
 
-1. **Synchronous HTTP Ingress (REST API)**: Client requests arrive through `nginx-router` (:8000), routed to regional compute nodes via `X-Source-Region`. Reads execute against local PostgreSQL (Home-Region Reads), while mutations route synchronously to the global writer (Follow-the-Sun Writer).
+1. **Synchronous HTTP Ingress (REST API)**: Client requests arrive through `servicetalk-router` (:8000), routed to regional compute nodes via Locality Priority ($P_0 \to P_1$) and `X-Source-Region`. Reads execute against local PostgreSQL (Home-Region Reads), while mutations route synchronously to the global writer (Follow-the-Sun Writer). Legacy Nginx router is available on profile `legacy-nginx` (:8001).
 2. **Asynchronous Event Ingress (AMQP Queue)**: Events publish to regional RabbitMQ brokers and are consumed by dedicated local Spring Boot listener containers (`orders` queue, retry queue, and DLQ). During a regional disaster recovery (DR) outage, listener takeover is governed by PostgreSQL lease coordination (`queue_region_status`), allowing the surviving region to dynamically take over and drain remote queues without involving Nginx.
 
 <p align="center">
@@ -100,9 +100,9 @@ The system distinguishes two separate message flows with different reliability a
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
 - **Docker Compose**: Full stack runs locally with Docker
-- **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions to a self-hosted SigNoz Docker stack
+- **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions and the edge router to a self-hosted SigNoz Docker stack
 - **Floci infrastructure profile**: AWS-compatible APIs provision RDS and Amazon MQ resources with real PostgreSQL and RabbitMQ data planes
-- **Nginx request routing**: Static source-region routing for the local demo
+- **ServiceTalk Locality Router**: Non-blocking edge router with Envoy/ServiceTalk Locality Priority ($P_0 \to P_1$), passive outlier detection, and zero-latency-penalty failover (legacy Nginx available under `legacy-nginx` profile)
 - **Region-aware config**: Typed Pkl defaults plus profile-based regional overrides
 
 ## Quick Start
@@ -120,6 +120,7 @@ The system distinguishes two separate message flows with different reliability a
 |------|-------------|-------------------|--------------------------|------------|
 | Aurora/PostgreSQL (root stack) | Fenced single global writer | Writer authority + home-region reads | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/) | `./scripts/e2e-acceptance.sh --start --cleanup --verify-failover` |
 | [Cassandra](cases/cassandra/README.md) | Active-active across two datacenters | `LOCAL_QUORUM`, RF=3 per DC | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html) | `./scripts/cassandra-e2e.sh --start --cleanup` |
+| [ServiceTalk Locality Router](cases/servicetalk-router/README.md) | Default edge router replacing Nginx | Locality Priority ($P_0 \to P_1$), 0ms failover penalty | [Router Case ↗](cases/servicetalk-router/README.md) | `./scripts/servicetalk-stress-test.sh` |
 
 The cases are separate because their failure semantics are different. The
 Cassandra flow moves traffic to the surviving application/datacenter during a

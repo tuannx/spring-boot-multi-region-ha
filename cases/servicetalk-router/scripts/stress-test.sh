@@ -11,8 +11,18 @@ unset CDPATH
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd -P)"
 
-NGINX_URL="${NGINX_URL:-http://localhost:8000}"
-SERVICETALK_URL="${SERVICETALK_URL:-http://localhost:8085}"
+# Auto-detect ports: ServiceTalk can be default on :8000 or standalone on :8085
+if [[ -z "${SERVICETALK_URL:-}" ]]; then
+  if curl -s -I -m 2 http://localhost:8000/health 2>/dev/null | grep -iq "servicetalk"; then
+    SERVICETALK_URL="http://localhost:8000"
+    NGINX_URL="${NGINX_URL:-http://localhost:8001}"
+  else
+    SERVICETALK_URL="http://localhost:8085"
+    NGINX_URL="${NGINX_URL:-http://localhost:8000}"
+  fi
+else
+  NGINX_URL="${NGINX_URL:-http://localhost:8000}"
+fi
 REQUESTS_COUNT="${REQUESTS_COUNT:-25}"
 SKIP_CHAOS="${SKIP_CHAOS:-false}"
 
