@@ -22,7 +22,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7.0.1
 
-      - name: Set up Java
+      - name: Set up Java 21
+        uses: actions/setup-java@v6.0.0
+        with:
+          distribution: corretto
+          java-version: "21"
+
+      - name: Set up Java 26
         uses: actions/setup-java@v6.0.0
         with:
           distribution: corretto
@@ -37,9 +43,13 @@ jobs:
         run: |
           gradle -p app clean test --no-daemon
           gradle -p cases/cassandra/app clean test --no-daemon
+          gradle -p cases/servicetalk-router/app clean test --no-daemon
 
       - name: Validate Cassandra case Compose model
         run: docker compose -f cases/cassandra/docker-compose.yml config --quiet
+
+      - name: Validate ServiceTalk router case Compose model
+        run: docker compose -f cases/servicetalk-router/docker-compose.yml config --quiet
 
       - name: Upload application test and QuickPerf measurements
         if: always()
@@ -49,6 +59,8 @@ jobs:
           path: |
             app/build/test-results/test/
             app/build/reports/tests/test/
+            cases/servicetalk-router/app/build/test-results/test/
+            cases/servicetalk-router/app/build/reports/tests/test/
           if-no-files-found: ignore
 
       - name: Run Docker end-to-end acceptance

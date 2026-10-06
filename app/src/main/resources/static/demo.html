@@ -263,7 +263,7 @@
           </g>
           <g class="node" id="nRouter">
             <rect x="305" y="8" width="150" height="46" rx="6"/>
-            <text class="name" x="380" y="28" text-anchor="middle">nginx-router</text>
+            <text class="name" x="380" y="28" text-anchor="middle">servicetalk-router</text>
             <text class="sub" x="380" y="44" text-anchor="middle">:8000 X-Source-Region</text>
           </g>
           <g class="node" id="nAppUs">
@@ -294,7 +294,7 @@
         <div class="legend">
           <span><i></i>writes → global writer</span>
           <span><i class="read"></i>reads → home region</span>
-          <span><i class="route"></i>nginx source-region route</span>
+          <span><i class="route"></i>servicetalk source-region route</span>
         </div>
       </div>
     </section>
@@ -364,7 +364,7 @@
 
 <footer>
   Dashboard polls <code>/demo/status</code> on both apps every 2s (falls back to <code>/health</code> + <code>/admin/*</code>).
-  Override endpoints with <code>?us=&amp;eu=</code> query params. Served from either app or the nginx router.
+  Override endpoints with <code>?us=&amp;eu=</code> query params. Served from either app or the servicetalk router.
 </footer>
 
 <script>

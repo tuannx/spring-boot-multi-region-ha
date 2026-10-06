@@ -63,7 +63,7 @@ The ServiceTalk Router is designed specifically for multi-region topologies:
 
 ## 3. Comparative Analysis: Nginx vs ServiceTalk Router
 
-| Architectural Metric | Traditional Nginx Router (`:8000`) | ServiceTalk Locality Router (`:8085`) |
+| Architectural Metric | Traditional Nginx Router (Legacy `:8001`) | ServiceTalk Locality Router (Default `:8000`) |
 | :--- | :--- | :--- |
 | **Outlier Detection Strategy** | None (Blind reverse proxy) | Passive Outlier Ejection (3 errors, 5s cooldown) |
 | **Outage Failover Latency** | ~5,000ms stall (`proxy_connect_timeout`) | < 15ms (< 1ms routing overhead) |
@@ -79,21 +79,21 @@ The ServiceTalk Router is designed specifically for multi-region topologies:
 
 ### 4.1 Running with Docker Compose
 
-Start the ServiceTalk router connected to the multi-region network:
+Start the multi-region stack (ServiceTalk router is enabled as default ingress on port `8000`):
 
 ```bash
-# Start the full multi-region stack (if not already running)
+# Start the full multi-region stack with ServiceTalk router as default ingress (:8000)
 docker compose up -d
 
-# Build and start the ServiceTalk Router
-docker compose -f cases/servicetalk-router/docker-compose.yml up -d --build
+# (Optional) To run the legacy Nginx router on :8001 alongside for comparison:
+docker compose --profile legacy-nginx up -d
 ```
 
 ### 4.2 Verifying Endpoints
 
 1. **Default US Locality Routing ($P_0 \to \text{us-east-1}$)**:
    ```bash
-   curl -i http://localhost:8085/api/products
+   curl -i http://localhost:8000/api/products
    ```
    *Response contains headers:*
    ```http
