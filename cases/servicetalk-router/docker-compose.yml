@@ -1,0 +1,30 @@
+services:
+  servicetalk-router:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: multiregion-servicetalk-router:latest
+    container_name: multiregion-servicetalk-router
+    restart: unless-stopped
+    environment:
+      ROUTER_PORT: 8085
+      US_ENDPOINT_HOST: app-us
+      US_ENDPOINT_PORT: 8080
+      EU_ENDPOINT_HOST: app-eu
+      EU_ENDPOINT_PORT: 8081
+      FAILURE_THRESHOLD: 3
+      COOLDOWN_MS: 5000
+    ports:
+      - "${SERVICETALK_ROUTER_PORT:-8085}:8085"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - multiregion-net
+
+networks:
+  multiregion-net:
+    name: spring-boot-multi-region-ha_multiregion-net
+    external: true
