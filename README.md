@@ -97,6 +97,7 @@ The system distinguishes two separate message flows with different reliability a
 - **AWS JDBC Wrapper**: Failover-aware initial writer/reader pools via `failover2`
 - **Failover detection and activation**: Secondary region detects primary outage and activates only after writer authority is verified (unless the unsafe demo opt-in is enabled)
 - **Manual failover**: Admin endpoint for forced failover activation
+- **Resilience guards**: Circuit breaker fails topology probes fast during outages (non-connectivity failures keep refuse-to-promote semantics); write bulkhead sheds overload as 429
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
 - **Docker Compose**: Full stack runs locally with Docker
