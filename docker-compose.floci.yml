@@ -184,10 +184,18 @@ services:
     ports:
       - "${APP_EU_HOST_PORT:-8081}:8081"
     depends_on:
-      - postgres-us
-      - postgres-eu
-      - rabbitmq-us
-      - rabbitmq-eu
+      postgres-us:
+        condition: service_started
+      postgres-eu:
+        condition: service_started
+      rabbitmq-us:
+        condition: service_started
+      rabbitmq-eu:
+        condition: service_started
+      # EU validates JPA against the US writer pool, so it must boot after
+      # app-us has migrated postgres-us (Flyway runs before the app is UP).
+      app-us:
+        condition: service_healthy
     networks:
       - floci-net
 
