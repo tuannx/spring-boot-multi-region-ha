@@ -42,6 +42,12 @@ dependencies {
     // AWS Advanced JDBC Wrapper with Global Database failover
     implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.4.0")
 
+    // Resilience4j (programmatic, no Spring starter): circuit breaker for
+    // topology probes and bulkhead for the write route. Pinned via BOM.
+    implementation(platform("io.github.resilience4j:resilience4j-bom:2.4.0"))
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker")
+    implementation("io.github.resilience4j:resilience4j-bulkhead")
+
     // Optional Kinesis ingest layer (Deere pattern: Kinesis in front of SQS).
     // Only used when ingest.enabled=true; clients are built manually in
     // IngestConfiguration so no Spring Cloud AWS magic is involved.
