@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test-and-acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     permissions:
       contents: read
 
@@ -44,12 +44,16 @@ jobs:
           gradle -p app clean test --no-daemon
           gradle -p cases/cassandra/app clean test --no-daemon
           gradle -p cases/servicetalk-router/app clean test --no-daemon
+          gradle -p cases/elasticache-global/app clean test --no-daemon
 
       - name: Validate Cassandra case Compose model
         run: docker compose -f cases/cassandra/docker-compose.yml config --quiet
 
       - name: Validate ServiceTalk router case Compose model
         run: docker compose -f cases/servicetalk-router/docker-compose.yml config --quiet
+
+      - name: Validate ElastiCache Global (Valkey) case Compose model
+        run: docker compose -f cases/elasticache-global/docker-compose.yml config --quiet
 
       - name: Upload application test and QuickPerf measurements
         if: always()
@@ -61,10 +65,15 @@ jobs:
             app/build/reports/tests/test/
             cases/servicetalk-router/app/build/test-results/test/
             cases/servicetalk-router/app/build/reports/tests/test/
+            cases/elasticache-global/app/build/test-results/test/
+            cases/elasticache-global/app/build/reports/tests/test/
           if-no-files-found: ignore
 
       - name: Run Docker end-to-end acceptance
         run: ./scripts/e2e-acceptance.sh --start --cleanup --verify-failover
+
+      - name: Run ElastiCache Global (Valkey) case Docker acceptance
+        run: ./scripts/elasticache-global-e2e.sh --start --cleanup
 
       - name: Upload acceptance evidence
         if: always()
@@ -92,6 +101,25 @@ jobs:
 
       - name: Run Floci infrastructure and application acceptance
         run: ./scripts/floci-e2e.sh --cleanup
+
+      - name: Provision ElastiCache (Valkey) clusters through Floci
+        run: |
+          docker compose -f docker-compose.floci.yml up -d floci-us floci-eu
+          for attempt in $(seq 1 60); do
+            if curl -s -o /dev/null http://localhost:4566/ && curl -s -o /dev/null http://localhost:4567/; then
+              break
+            fi
+            sleep 2
+          done
+          terraform -chdir=cases/elasticache-global/terraform init -input=false
+          terraform -chdir=cases/elasticache-global/terraform apply -auto-approve -input=false \
+            -var="floci_us_endpoint=http://localhost:4566" \
+            -var="floci_eu_endpoint=http://localhost:4567"
+          terraform -chdir=cases/elasticache-global/terraform output
+          terraform -chdir=cases/elasticache-global/terraform destroy -auto-approve -input=false \
+            -var="floci_us_endpoint=http://localhost:4566" \
+            -var="floci_eu_endpoint=http://localhost:4567"
+          docker compose -f docker-compose.floci.yml down --volumes --remove-orphans
 
       - name: Upload Floci acceptance evidence
         if: always()
