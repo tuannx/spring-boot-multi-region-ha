@@ -82,6 +82,60 @@ Wait a few seconds for batching, then inspect the `multiregion-app` service in
 SigNoz's Services, Traces, Metrics, and Logs views. Filter by
 `cloud.region` or `service.instance.id` to compare the two regions.
 
+When running with the default ServiceTalk router, inspect `multiregion-router`
+to view the end-to-end distributed trace and locality routing metrics.
+
+## Router Replacement Observability: Nginx vs ServiceTalk in SigNoz
+
+The migration from legacy Nginx reverse proxy to the ServiceTalk Locality Router
+fundamentally changes observability fidelity in SigNoz:
+
+### Before: Legacy Nginx Ingress (Trace Blind Spot)
+
+```text
+[Client] ──(Untraced HTTP)──► [Nginx :8000] ──(Untraced)──► [Spring Boot App] ──► [PostgreSQL]
+                                                             └─ Trace starts here ──┘
+```
+
+1. **Missing Ingress Node**: Nginx was an uninstrumented C proxy. In SigNoz's Service Map, the graph began abruptly at `multiregion-app`. The edge ingress tier was completely absent.
+2. **The 5-Second Latency Blind Spot**: When `app-us` failed or stalled, Nginx waited for `proxy_connect_timeout 5s`.
+   - On dropped requests (`504 Gateway Timeout`), **zero traces** reached SigNoz because the request never reached Spring Boot. SREs only saw traffic plummet with zero diagnostic trace evidence.
+   - On health failover (`@health_eu`), `app-eu` recorded a normal execution time (~10ms). The 5,000ms client delay was completely invisible in application traces ("phantom latency").
+3. **No Locality or Failover Telemetry**: No trace tags captured locality decisions ($P_0$ vs $P_1$) or failover events.
+
+---
+
+### After: ServiceTalk Locality Router (End-to-End Traced)
+
+```text
+[Client] ──► [multiregion-router (ServiceTalk :8000)] ──► [multiregion-app (Spring Boot)] ──► [PostgreSQL]
+             └────────────── End-to-End Distributed Trace (W3C Context Propagation) ──────────────┘
+```
+
+1. **Full Distributed Tracing from Edge**: `multiregion-router` appears in the SigNoz Service Map and Service List as the authoritative ingress tier, connected directly to `multiregion-app`.
+2. **Observable Failover Spans & Circuit Breaking**:
+   - **In-flight Failover**: When `app-us` stalls during an outage, the parent span on `multiregion-router` explicitly records:
+     - Child Span 1: `GET http://app-us:8080/api/products` &rarr; `error: true`, `TimeoutException` (800ms).
+     - Child Span 2: `GET http://app-eu:8081/api/products` &rarr; `http.status_code: 200` (~15ms).
+     - Telemetry headers: `X-Failover: true`, `X-Routed-Priority: P1`, `X-Routed-Region: eu-west-1`.
+   - **Outlier Ejection (Zero Penalty)**: Once `app-us` breaches the failure threshold, subsequent traces show **direct routing** to `app-eu` as a single child span in < 20ms. The outlier bypass is clearly visible in trace flamegraphs.
+3. **Root-Cause Attribution & MTTD**: SREs can instantly decompose total round-trip latency into:
+   `Client Ingress -> Router Locality Evaluation -> Upstream Compute -> Database Execution`.
+
+---
+
+### SigNoz Telemetry Comparison Matrix
+
+| Observability Capability | Before (Nginx Router) | After (ServiceTalk Router) |
+| :--- | :--- | :--- |
+| **Service Map Ingress Node** | **Missing** (Graph starts at Spring Boot) | **Present** (`multiregion-router` &rarr; `multiregion-app`) |
+| **Outage Trace Capture** | **0%** (504 errors dropped with no trace) | **100%** (Router span captures error & failover child span) |
+| **5s Connect Timeout Visibility** | **Invisible** (Phantom latency not in SigNoz) | **Explicit** (Span shows 800ms upstream timeout) |
+| **Outlier Ejection Visualization** | **None** (Blind repeated attempts) | **Flamegraph shows direct P1 route** with 0ms penalty |
+| **W3C Context Propagation** | Broken / unmanaged | Full `traceparent` & `tracestate` propagation |
+| **Locality Telemetry in Spans** | None | Headers: `X-Routed-Priority`, `X-Routed-Region`, `X-Failover` |
+| **RED Metrics on Ingress** | None in SigNoz | Native Request Rate, Error Rate, and Duration in SigNoz |
+
 ## Stop and clean up
 
 ```bash
