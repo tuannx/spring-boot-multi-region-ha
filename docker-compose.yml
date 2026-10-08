@@ -242,6 +242,82 @@ services:
           - servicetalk-router.local
 
   # ============================================
+  # OPTIONAL: Kinesis ingest layer (profile: kinesis)
+  # Deere pattern: MTG -> Kinesis -> Ingest Service (routing) -> SQS ->
+  # Message Processor Service (app-us/app-eu queue listeners).
+  # Start with: docker compose --profile kinesis up -d
+  # Default stack (no profile) is unchanged: ingest layer stays OFF.
+  # ============================================
+  localstack:
+    profiles:
+      - kinesis
+    image: localstack/localstack:4.9.1
+    container_name: multiregion-localstack
+    environment:
+      SERVICES: kinesis,sqs
+      DEBUG: "0"
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./docker/localstack/init-aws.sh:/etc/localstack/init/ready.d/init-aws.sh:ro
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - multiregion-net
+
+  ingest-us:
+    profiles:
+      - kinesis
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        SPRING_PROFILES_ACTIVE: region-us
+    image: multiregion-app-us:latest
+    container_name: multiregion-ingest-us
+    environment:
+      SPRING_PROFILES_ACTIVE: region-us
+      DB_HOST: postgres-us
+      DB_PORT: 5432
+      DB_NAME: appdb
+      DB_USER: appuser
+      DB_PASS: apppass
+      AWS_REGION: us-east-1
+      REGION_ROLE: primary
+      ACTIVE_WRITER_DB_HOST: postgres-us
+      ACTIVE_WRITER_DB_PORT: 5432
+      LOCAL_DB_HOST: postgres-us
+      LOCAL_DB_PORT: 5432
+      FAILOVER_WRITER_DB_HOST: postgres-eu
+      FAILOVER_WRITER_DB_PORT: 5432
+      FAILOVER_FAILURE_THRESHOLD: 3
+      FAILOVER_ALLOW_UNFENCED_PROMOTION: "false"
+      SERVER_PORT: 8082
+      SERVICE_ROLE: ingest
+      INGEST_ENABLED: "true"
+      INGEST_MODE: kinesis
+      INGEST_STREAMNAME: mtg-ingest
+      INGEST_STREAMREGION: us-east-1
+      INGEST_ENDPOINTOVERRIDE: http://localstack:4566
+      INGEST_DESTINATION_TYPE: sqs
+      INGEST_DESTINATION_SQS_QUEUENAMEPATTERN: "%s-%s"
+      QUEUES_ENABLED: "false"
+    ports:
+      - "${INGEST_US_HOST_PORT:-8082}:8082"
+    depends_on:
+      postgres-us:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    networks:
+      - multiregion-net
+
+  # ============================================
   # Legacy Nginx Router (Optional Comparison)
   # ============================================
   nginx-router:
@@ -265,6 +341,7 @@ volumes:
   pg-eu-data:
   rabbitmq-us-data:
   rabbitmq-eu-data:
+  localstack-data:
 
 networks:
   multiregion-net:
