@@ -36,7 +36,7 @@ env:
   ENFORCE_BLOCK: "true"
   # Pinned ArcadeAttest source. Pin to a commit SHA for reproducible gates;
   # bump deliberately, never to a floating "latest".
-  ATTEST_INSTALL: "git+https://github.com/arcade-red-team/arcade-attest@351a9723990061c99e4047e5bd272e6c138d83d0"
+  ATTEST_INSTALL: "arcade-attest[api] @ git+https://github.com/arcade-red-team/arcade-attest@351a9723990061c99e4047e5bd272e6c138d83d0"
   ATTEST_PORT: "8787"
 
 jobs:
@@ -73,7 +73,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install ArcadeAttest (pinned)
-        run: pip install "${ATTEST_INSTALL}[api]"
+        run: pip install "${ATTEST_INSTALL}"
 
       - name: Start the local Decision API
         run: |
