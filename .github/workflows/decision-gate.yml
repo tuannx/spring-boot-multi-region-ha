@@ -1,0 +1,154 @@
+# AI Decision Gate — local Decision API edition (no direct LLM).
+#
+# Copy this file into a consumer repo as .github/workflows/decision-gate.yml
+# and add a Decision Record at .arcade-attest/decision-record.json.
+#
+# How this differs from an LLM gate:
+#   * The verdict comes from the ArcadeAttest Decision API running locally
+#     in the runner (deterministic predicates + scoring@1). No model decides
+#     ALLOW/BLOCK, and nothing leaves the runner.
+#   * A local LLM (for example Jinfer) may optionally draft a human-readable
+#     explanation of the evidence pack, but it can never change the verdict.
+#     That optional step is intentionally not wired here.
+#
+# The gate diffs the real PR base/head SHAs (not HEAD~1), renders the
+# evidence pack as a PR comment, uploads it as an artifact, and fails the
+# job when the verdict is BLOCK and ENFORCE_BLOCK is "true".
+
+name: AI Decision Gate (Local Decision API)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  # Path to the Decision Record in this repo (create it before enabling).
+  DECISION_RECORD: .arcade-attest/decision-record.json
+  # Primary language of this repo for arcade-agent analysis: python | java | ...
+  LANGUAGE: java
+  # "true" fails the job on a BLOCK verdict; "false" reports advisory only.
+  ENFORCE_BLOCK: "true"
+  # Pinned ArcadeAttest source. Pin to a commit SHA for reproducible gates;
+  # bump deliberately, never to a floating "latest".
+  ATTEST_INSTALL: "git+https://github.com/arcade-red-team/arcade-attest@351a9723990061c99e4047e5bd272e6c138d83d0"
+  ATTEST_PORT: "8787"
+
+jobs:
+  decision-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for base/head trees)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve base and head SHAs
+        id: refs
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=${{ github.event.before }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Materialize base and head source trees
+        run: |
+          mkdir -p "$RUNNER_TEMP/attest-base" "$RUNNER_TEMP/attest-head"
+          git archive "${{ steps.refs.outputs.base }}" | tar -x -C "$RUNNER_TEMP/attest-base"
+          git archive "${{ steps.refs.outputs.head }}" | tar -x -C "$RUNNER_TEMP/attest-head"
+          echo "Base tree: $(find "$RUNNER_TEMP/attest-base" -type f | wc -l) files"
+          echo "Head tree: $(find "$RUNNER_TEMP/attest-head" -type f | wc -l) files"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ArcadeAttest (pinned)
+        run: pip install "${ATTEST_INSTALL}[api]"
+
+      - name: Start the local Decision API
+        run: |
+          nohup arcade-attest serve --host 127.0.0.1 --port "$ATTEST_PORT" > attest-api.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:${ATTEST_PORT}/health" > /dev/null; then
+              echo "Local Decision API is up"
+              curl -s "http://127.0.0.1:${ATTEST_PORT}/health"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Local Decision API failed to start:"
+          cat attest-api.log
+          exit 1
+
+      - name: Evaluate with the local Decision API
+        id: evaluate
+        env:
+          BASE_TREE: ${{ runner.temp }}/attest-base
+          HEAD_TREE: ${{ runner.temp }}/attest-head
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          record = json.load(open(os.environ["DECISION_RECORD"], encoding="utf-8"))
+          payload = {
+              "repo": record.get("repo") or "${{ github.repository }}",
+              "base_path": os.path.join(os.environ["BASE_TREE"], "app/src/main/java"),
+              "head_path": os.path.join(os.environ["HEAD_TREE"], "app/src/main/java"),
+              "language": os.environ.get("LANGUAGE", "python"),
+              "decision_record": record,
+          }
+          request = urllib.request.Request(
+              "http://127.0.0.1:%s/v1/decisions:evaluate" % os.environ["ATTEST_PORT"],
+              data=json.dumps(payload).encode(),
+              headers={"content-type": "application/json"},
+          )
+          try:
+              with urllib.request.urlopen(request) as response:
+                  pack = json.load(response)
+          except urllib.error.HTTPError as error:
+              print(error.read().decode())
+              raise
+          with open("evidence-pack.json", "w", encoding="utf-8") as fh:
+              json.dump(pack, fh, indent=2)
+          print("verdict:", pack["verdict"], "| overall_score:", pack.get("overall_score"))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write("verdict=%s\n" % pack["verdict"])
+              fh.write("pack_id=%s\n" % pack["id"])
+          PY
+
+      - name: Render and post the PR comment
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          arcade-attest render-comment --pack evidence-pack.json --out comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
+
+      - name: Upload the evidence pack
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arcade-attest-evidence-pack
+          path: |
+            evidence-pack.json
+            attest-api.log
+          if-no-files-found: ignore
+
+      - name: Enforce the verdict
+        if: always()
+        run: |
+          verdict="${{ steps.evaluate.outputs.verdict }}"
+          echo "Decision API verdict: $verdict (llm_in_verdict: false)"
+          if [ "$verdict" = "BLOCK" ] && [ "$ENFORCE_BLOCK" = "true" ]; then
+            echo "Gate blocked by the local Decision API. See the evidence pack."
+            exit 1
+          fi
