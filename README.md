@@ -750,4 +750,4 @@ java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
 
 ## License
 
-MIT
+[MIT](LICENSE)
