@@ -1,21 +1,23 @@
-# AI Decision Gate — local Decision API edition (no direct LLM).
+# AI Decision Gate — local Decision API + Qxotic Jinfer edition.
 #
 # Copy this file into a consumer repo as .github/workflows/decision-gate.yml
 # and add a Decision Record at .arcade-attest/decision-record.json.
 #
-# How this differs from an LLM gate:
-#   * The verdict comes from the ArcadeAttest Decision API running locally
-#     in the runner (deterministic predicates + scoring@1). No model decides
-#     ALLOW/BLOCK, and nothing leaves the runner.
-#   * A local LLM (for example Jinfer) may optionally draft a human-readable
-#     explanation of the evidence pack, but it can never change the verdict.
-#     That optional step is intentionally not wired here.
+# Roles (kept separate on purpose):
+#   * ArcadeAttest Decision API (local, in the runner) computes the verdict
+#     from deterministic predicates + scoring@1. It is the only judge.
+#   * Qxotic Jinfer (https://github.com/qxoticai/qxotic, local JVM LLM
+#     inference, OpenAI-compatible server on loopback) drafts a short
+#     human-readable explanation of the evidence pack. It never sees a
+#     vote and can never change the verdict (`llm_in_verdict: false`).
+#   * Nothing leaves the runner for either step.
 #
 # The gate diffs the real PR base/head SHAs (not HEAD~1), renders the
-# evidence pack as a PR comment, uploads it as an artifact, and fails the
-# job when the verdict is BLOCK and ENFORCE_BLOCK is "true".
+# evidence pack as a PR comment, appends the Jinfer draft, uploads the
+# pack as an artifact, and fails the job when the verdict is BLOCK and
+# ENFORCE_BLOCK is "true".
 
-name: AI Decision Gate (Local Decision API)
+name: AI Decision Gate (Local Decision API + Qxotic)
 
 on:
   pull_request:
@@ -35,9 +37,17 @@ env:
   # "true" fails the job on a BLOCK verdict; "false" reports advisory only.
   ENFORCE_BLOCK: "true"
   # Pinned ArcadeAttest source. Pin to a commit SHA for reproducible gates;
-  # bump deliberately, never to a floating "latest".
-  ATTEST_INSTALL: "arcade-attest[api] @ git+https://github.com/arcade-red-team/arcade-attest@351a9723990061c99e4047e5bd272e6c138d83d0"
+  # bump deliberately, never to a floating "latest". pip extras go before
+  # the "@" for VCS installs ("pkg[extra] @ git+...@SHA").
+  ATTEST_INSTALL: "arcade-attest[api] @ git+https://github.com/arcade-red-team/arcade-attest@5d46cb40c7db6d9fe14110fa2b70045406f11178"
   ATTEST_PORT: "8787"
+  # --- Qxotic Jinfer (local LLM explanation draft) ---
+  # "true" appends a Jinfer-drafted explanation to the PR comment.
+  QXOTIC_EXPLAIN: "true"
+  JINFER_VERSION: "0.3.1"
+  JINFER_JAR_SHA256: "ca0dd45cf6d49c474663d2e802d69b2c756d301c3d64e956a458f7db29b43c18"
+  JINFER_MODEL: "LiquidAI/LFM2.5-350M-GGUF:Q8_0"
+  JINFER_PORT: "54154"
 
 jobs:
   decision-gate:
@@ -93,16 +103,16 @@ jobs:
       - name: Evaluate with the local Decision API
         id: evaluate
         env:
-          BASE_TREE: ${{ runner.temp }}/attest-base
-          HEAD_TREE: ${{ runner.temp }}/attest-head
+          BASE_TREE: ${{ runner.temp }}/attest-base/app/src/main/java
+          HEAD_TREE: ${{ runner.temp }}/attest-head/app/src/main/java
         run: |
           python3 - <<'PY'
           import json, os, urllib.request
           record = json.load(open(os.environ["DECISION_RECORD"], encoding="utf-8"))
           payload = {
               "repo": record.get("repo") or "${{ github.repository }}",
-              "base_path": os.path.join(os.environ["BASE_TREE"], "app/src/main/java"),
-              "head_path": os.path.join(os.environ["HEAD_TREE"], "app/src/main/java"),
+              "base_path": os.environ["BASE_TREE"],
+              "head_path": os.environ["HEAD_TREE"],
               "language": os.environ.get("LANGUAGE", "python"),
               "decision_record": record,
           }
@@ -125,12 +135,52 @@ jobs:
               fh.write("pack_id=%s\n" % pack["id"])
           PY
 
+      - name: Setup Java 25 (for Qxotic Jinfer)
+        if: env.QXOTIC_EXPLAIN == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Start Qxotic Jinfer server (local LLM)
+        if: env.QXOTIC_EXPLAIN == 'true'
+        run: |
+          curl -sfL -o "$RUNNER_TEMP/jinfer.jar" \
+            "https://repo1.maven.org/maven2/com/qxotic/jinfer-cli/${JINFER_VERSION}/jinfer-cli-${JINFER_VERSION}.jar"
+          echo "${JINFER_JAR_SHA256}  $RUNNER_TEMP/jinfer.jar" | sha256sum -c -
+          nohup java --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED \
+            -jar "$RUNNER_TEMP/jinfer.jar" -m "$JINFER_MODEL" server --port "$JINFER_PORT" \
+            > jinfer.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -sf "http://127.0.0.1:${JINFER_PORT}/health" > /dev/null; then
+              echo "Qxotic Jinfer is up"
+              curl -s "http://127.0.0.1:${JINFER_PORT}/v1/models"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Qxotic Jinfer failed to start:"
+          cat jinfer.log
+          exit 1
+
+      - name: Draft the explanation with Qxotic Jinfer (draft only)
+        if: env.QXOTIC_EXPLAIN == 'true'
+        run: |
+          # Failure here must never fail or change the gate: the verdict
+          # above is final. `|| true` keeps a missing model from blocking.
+          arcade-attest explain-qxotic --pack evidence-pack.json \
+            --base-url "http://127.0.0.1:${JINFER_PORT}" --model "$JINFER_MODEL" \
+            --out qxotic-explanation.md || echo "Jinfer explanation unavailable; continuing without it."
+
       - name: Render and post the PR comment
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           arcade-attest render-comment --pack evidence-pack.json --out comment.md
+          if [ -s qxotic-explanation.md ]; then
+            cat qxotic-explanation.md >> comment.md
+          fi
           gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
 
       - name: Upload the evidence pack
@@ -141,6 +191,8 @@ jobs:
           path: |
             evidence-pack.json
             attest-api.log
+            jinfer.log
+            qxotic-explanation.md
           if-no-files-found: ignore
 
       - name: Enforce the verdict
