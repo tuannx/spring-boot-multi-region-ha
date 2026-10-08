@@ -1,6 +1,6 @@
 services:
   floci-us:
-    image: floci/floci:2.0.1
+    image: floci/floci:2.2.0
     container_name: spring-ha-floci-us
     environment:
       FLOCI_DEFAULT_REGION: us-east-1
@@ -8,6 +8,15 @@ services:
       FLOCI_SERVICES_DOCKER_NETWORK: spring-ha-floci
       FLOCI_SERVICES_RDS_PROXY_BASE_PORT: "7001"
       FLOCI_SERVICES_RDS_PROXY_MAX_PORT: "7010"
+      # Floci >= 2.1 publishes managed RabbitMQ brokers on host ports from
+      # these ranges (default AMQP 5672+, console 15672+), which collides
+      # with the rabbitmq-us/eu socat host ports below. Allocate per region
+      # outside that space; scripts/floci-e2e.sh discovers the real
+      # endpoints from the MQ API, so no other config depends on them.
+      FLOCI_SERVICES_AMAZONMQ_AMQP_HOST_PORT_BASE: "5701"
+      FLOCI_SERVICES_AMAZONMQ_AMQP_HOST_PORT_MAX: "5705"
+      FLOCI_SERVICES_AMAZONMQ_CONSOLE_HOST_PORT_BASE: "15701"
+      FLOCI_SERVICES_AMAZONMQ_CONSOLE_HOST_PORT_MAX: "15705"
       FLOCI_STORAGE_MODE: memory
     ports:
       - "4566:4566"
@@ -17,7 +26,7 @@ services:
       - floci-net
 
   floci-eu:
-    image: floci/floci:2.0.1
+    image: floci/floci:2.2.0
     container_name: spring-ha-floci-eu
     environment:
       FLOCI_DEFAULT_REGION: eu-west-1
@@ -25,6 +34,12 @@ services:
       FLOCI_SERVICES_DOCKER_NETWORK: spring-ha-floci
       FLOCI_SERVICES_RDS_PROXY_BASE_PORT: "7001"
       FLOCI_SERVICES_RDS_PROXY_MAX_PORT: "7010"
+      # See floci-us: keep the EU broker host ranges disjoint from both the
+      # socat publications and the US ranges.
+      FLOCI_SERVICES_AMAZONMQ_AMQP_HOST_PORT_BASE: "5711"
+      FLOCI_SERVICES_AMAZONMQ_AMQP_HOST_PORT_MAX: "5715"
+      FLOCI_SERVICES_AMAZONMQ_CONSOLE_HOST_PORT_BASE: "15711"
+      FLOCI_SERVICES_AMAZONMQ_CONSOLE_HOST_PORT_MAX: "15715"
       FLOCI_STORAGE_MODE: memory
     ports:
       - "4567:4566"
@@ -184,10 +199,18 @@ services:
     ports:
       - "${APP_EU_HOST_PORT:-8081}:8081"
     depends_on:
-      - postgres-us
-      - postgres-eu
-      - rabbitmq-us
-      - rabbitmq-eu
+      postgres-us:
+        condition: service_started
+      postgres-eu:
+        condition: service_started
+      rabbitmq-us:
+        condition: service_started
+      rabbitmq-eu:
+        condition: service_started
+      # EU validates JPA against the US writer pool, so it must boot after
+      # app-us has migrated postgres-us (Flyway runs before the app is UP).
+      app-us:
+        condition: service_healthy
     networks:
       - floci-net
 

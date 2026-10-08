@@ -11,6 +11,7 @@ import com.multiregion.queue.port.QueueManagementUseCase;
 import com.multiregion.queue.port.QueueRegionStateStore;
 import com.multiregion.queue.rabbitmq.RabbitMqQueueListenerProvisioner;
 import com.multiregion.queue.rabbitmq.RabbitMqQueueProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -23,7 +24,13 @@ import java.util.List;
 @Configuration
 public class QueueListenerConfiguration {
 
+    // Message Processor Service beans run in roles combined + processor only.
+    // In role ingest this process is the Kinesis routing layer and must not
+    // start any processor listeners.
+    static final String PROCESSOR_ROLE = "'${service.role:combined}' != 'ingest'";
+
     @Bean(name = "queueTaskScheduler")
+    @ConditionalOnExpression(PROCESSOR_ROLE)
     @ConditionalOnProperty(prefix = "queues", name = "enabled", havingValue = "true", matchIfMissing = true)
     public ThreadPoolTaskScheduler queueTaskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
@@ -53,6 +60,7 @@ public class QueueListenerConfiguration {
     }
 
     @Bean
+    @ConditionalOnExpression(PROCESSOR_ROLE)
     @ConditionalOnProperty(prefix = "queues", name = "enabled", havingValue = "true", matchIfMissing = true)
     public LocalQueueListenerCoordinator localQueueListenerCoordinator(
             MultiRegionConfig config,
@@ -64,6 +72,7 @@ public class QueueListenerConfiguration {
     }
 
     @Bean
+    @ConditionalOnExpression(PROCESSOR_ROLE)
     @ConditionalOnProperty(prefix = "queues", name = "enabled", havingValue = "true", matchIfMissing = true)
     public DynamicQueueListenerCoordinator dynamicQueueListenerCoordinator(
             MultiRegionConfig config,
