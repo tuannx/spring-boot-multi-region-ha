@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test-and-acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     permissions:
       contents: read
 
@@ -72,6 +72,9 @@ jobs:
       - name: Run Docker end-to-end acceptance
         run: ./scripts/e2e-acceptance.sh --start --cleanup --verify-failover
 
+      - name: Run ElastiCache Global (Valkey) case Docker acceptance
+        run: ./scripts/elasticache-global-e2e.sh --start --cleanup
+
       - name: Upload acceptance evidence
         if: always()
         uses: actions/upload-artifact@v7.0.1
@@ -98,6 +101,25 @@ jobs:
 
       - name: Run Floci infrastructure and application acceptance
         run: ./scripts/floci-e2e.sh --cleanup
+
+      - name: Provision ElastiCache (Valkey) clusters through Floci
+        run: |
+          docker compose -f docker-compose.floci.yml up -d floci-us floci-eu
+          for attempt in $(seq 1 60); do
+            if curl -s -o /dev/null http://localhost:4566/ && curl -s -o /dev/null http://localhost:4567/; then
+              break
+            fi
+            sleep 2
+          done
+          terraform -chdir=cases/elasticache-global/terraform init -input=false
+          terraform -chdir=cases/elasticache-global/terraform apply -auto-approve -input=false \
+            -var="floci_us_endpoint=http://localhost:4566" \
+            -var="floci_eu_endpoint=http://localhost:4567"
+          terraform -chdir=cases/elasticache-global/terraform output
+          terraform -chdir=cases/elasticache-global/terraform destroy -auto-approve -input=false \
+            -var="floci_us_endpoint=http://localhost:4566" \
+            -var="floci_eu_endpoint=http://localhost:4567"
+          docker compose -f docker-compose.floci.yml down --volumes --remove-orphans
 
       - name: Upload Floci acceptance evidence
         if: always()
