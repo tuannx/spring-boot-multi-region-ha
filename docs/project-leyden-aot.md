@@ -46,6 +46,7 @@ flowchart TD
         -XX:AOTConfiguration=/app/app.aotconf \
         -Dspring.context.exit=onRefresh \
         -Dspring.jpa.hibernate.ddl-auto=none \
+        -Dspring.flyway.enabled=false \
         -jar /app/app.jar
    ```
 2. **Assembly Run (Create):**
@@ -53,8 +54,12 @@ flowchart TD
    java -XX:AOTMode=create \
         -XX:AOTConfiguration=/app/app.aotconf \
         -XX:AOTCache=/app/app.aot \
+        -Dspring.flyway.enabled=false \
         -jar /app/app.jar
    ```
+
+   Training with Flyway off is Leyden-safe: migration classes simply miss the
+   training profile and JIT at production startup, where Flyway runs before JPA.
 3. **Production Run:**
    ```bash
    java -Djava.security.egd=file:/dev/./urandom \

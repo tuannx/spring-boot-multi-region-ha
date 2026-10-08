@@ -64,6 +64,7 @@ class Spring {
   threads: SpringThreads = new {}
   jpa: SpringJpa = new {}
   datasource: SpringDatasource = new {}
+  flyway: SpringFlyway = new {}
 }
 
 class SpringApplication {
@@ -88,7 +89,14 @@ class SpringJpa {
 }
 
 class SpringHibernate {
-  ddlAuto: String = "update"
+  ddlAuto: String = "validate"
+}
+
+class SpringFlyway {
+  enabled: Boolean = true
+  baselineOnMigrate: Boolean = true
+  baselineVersion: String = "1"
+  validateOnMigrate: Boolean = true
 }
 
 class SpringDatasource {

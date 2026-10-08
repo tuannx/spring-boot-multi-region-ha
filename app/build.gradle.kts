@@ -34,6 +34,11 @@ dependencies {
     // PostgreSQL driver
     implementation("org.postgresql:postgresql:42.7.13")
 
+    // Flyway: versioned schema (Aurora mock, fencing trigger, seeds) replaces
+    // the hand-synced docker/init scripts. Versions managed by the Boot BOM.
+    implementation("org.springframework.boot:spring-boot-starter-flyway")
+    implementation("org.flywaydb:flyway-database-postgresql")
+
     // AWS Advanced JDBC Wrapper with Global Database failover
     implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.4.0")
 

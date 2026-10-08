@@ -13,7 +13,7 @@ services:
     ports:
       - "5442:5432"
     volumes:
-      - ./docker/init/us/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      # Schema is Flyway-managed by each app against its home database.
       # PostgreSQL 18 stores cluster data below a major-version directory.
       # Mount the parent directory so pg_upgrade can work across major versions.
       - pg-us-data:/var/lib/postgresql
@@ -86,7 +86,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - ./docker/init/eu/01-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      # Schema is Flyway-managed by each app against its home database.
       # PostgreSQL 18 stores cluster data below a major-version directory.
       # Mount the parent directory so pg_upgrade can work across major versions.
       - pg-eu-data:/var/lib/postgresql
@@ -141,6 +141,11 @@ services:
       rabbitmq-us:
         condition: service_healthy
       rabbitmq-eu:
+        condition: service_healthy
+      # EU validates JPA against the US writer pool, so it must boot after
+      # app-us has migrated postgres-us. app-us health implies migration done
+      # because Flyway runs before the context reports UP.
+      app-us:
         condition: service_healthy
     networks:
       - multiregion-net
