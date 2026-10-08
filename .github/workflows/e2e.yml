@@ -44,12 +44,16 @@ jobs:
           gradle -p app clean test --no-daemon
           gradle -p cases/cassandra/app clean test --no-daemon
           gradle -p cases/servicetalk-router/app clean test --no-daemon
+          gradle -p cases/elasticache-global/app clean test --no-daemon
 
       - name: Validate Cassandra case Compose model
         run: docker compose -f cases/cassandra/docker-compose.yml config --quiet
 
       - name: Validate ServiceTalk router case Compose model
         run: docker compose -f cases/servicetalk-router/docker-compose.yml config --quiet
+
+      - name: Validate ElastiCache Global (Valkey) case Compose model
+        run: docker compose -f cases/elasticache-global/docker-compose.yml config --quiet
 
       - name: Upload application test and QuickPerf measurements
         if: always()
@@ -61,6 +65,8 @@ jobs:
             app/build/reports/tests/test/
             cases/servicetalk-router/app/build/test-results/test/
             cases/servicetalk-router/app/build/reports/tests/test/
+            cases/elasticache-global/app/build/test-results/test/
+            cases/elasticache-global/app/build/reports/tests/test/
           if-no-files-found: ignore
 
       - name: Run Docker end-to-end acceptance
