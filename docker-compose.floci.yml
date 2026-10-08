@@ -215,7 +215,7 @@ services:
       - floci-net
 
   nginx-router:
-    image: nginx:1.31.5-alpine
+    image: nginx:1.31.6-alpine
     container_name: multiregion-floci-router
     ports:
       - "${ROUTER_HOST_PORT:-8000}:80"

@@ -329,7 +329,7 @@ services:
     profiles:
       - legacy-nginx
       - comparison
-    image: nginx:1.31.5-alpine
+    image: nginx:1.31.6-alpine
     container_name: multiregion-nginx-router
     ports:
       - "${NGINX_ROUTER_HOST_PORT:-8001}:80"
