@@ -1,0 +1,41 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: multiregion-elasticache-app
+  threads:
+    virtual:
+      enabled: true
+  data:
+    redis:
+      host: ${VALKEY_HOST:localhost}
+      port: ${VALKEY_PORT:6379}
+      connect-timeout: 2s
+      timeout: 2s
+
+app:
+  region:
+    name: ${APP_REGION:us-east-1}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+  info:
+    java:
+      enabled: true
+    os:
+      enabled: true
+    process:
+      enabled: true
+
+info:
+  app:
+    name: Multi-Region ElastiCache (Valkey) Case
+    engine: valkey
+    replication: primary-replica (Global Datastore style)

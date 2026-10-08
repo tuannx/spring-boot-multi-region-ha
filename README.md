@@ -35,7 +35,9 @@ A Spring Boot application demonstrating multi-region high availability using the
 The repository also includes an independent
 [`Cassandra multi-region case`](cases/cassandra/README.md) for workloads that
 need active-active regional writes rather than Aurora's fenced single-writer
-model.
+model, and an
+[`ElastiCache Global Datastore (Valkey) case`](cases/elasticache-global/README.md)
+for primary/replica caching with asynchronous cross-region replication.
 
 <p align="center">
   <a href="https://tuannx.github.io/spring-boot-multi-region-ha/">
@@ -143,6 +145,7 @@ The system distinguishes two separate message flows with different reliability a
 |------|-------------|-------------------|--------------------------|------------|
 | Aurora/PostgreSQL (root stack) | Fenced single global writer | Writer authority + home-region reads | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/) | `./scripts/e2e-acceptance.sh --start --cleanup --verify-failover` |
 | [Cassandra](cases/cassandra/README.md) | Active-active across two datacenters | `LOCAL_QUORUM`, RF=3 per DC | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html) | `./scripts/cassandra-e2e.sh --start --cleanup` |
+| [ElastiCache Global (Valkey)](cases/elasticache-global/README.md) | Single primary, read-only replicas | Async replication, measured stale-read window | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/elasticache-global.html) | `./scripts/elasticache-global-e2e.sh --start --cleanup` |
 | [ServiceTalk Locality Router](cases/servicetalk-router/README.md) | Default edge router replacing Nginx | Locality Priority ($P_0 \to P_1$), 0ms failover penalty | [Router Case ↗](cases/servicetalk-router/README.md) | `./scripts/servicetalk-stress-test.sh` |
 
 The cases are separate because their failure semantics are different. The
@@ -351,7 +354,7 @@ complete provisioning and acceptance flow with:
 
 The script:
 
-1. Starts one pinned `floci/floci:2.0.1` control plane per region so resources
+1. Starts one pinned `floci/floci:2.2.0` control plane per region so resources
    and failure domains are isolated.
 2. Applies `infra/floci/terraform` against both Floci endpoints for two RDS
    instances using the latest AWS provider 6.x compatibility path.
@@ -759,6 +762,7 @@ java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
 ## Related Resources
 
 - [Cassandra Multi-Region Case](cases/cassandra/README.md) — runnable two-datacenter active-active topology with regional traffic failover
+- [ElastiCache Global Datastore (Valkey) Case](cases/elasticache-global/README.md) — two-region Valkey primary/replica with promotion failover and a measured stale-read window
 - [Project Leyden AOT Guide](docs/project-leyden-aot.md) — OpenJDK 26 Ahead-of-Time cache architecture, training pipeline, and benchmark metrics
 - [RPO Failure Modes Reference](docs/rpo-failure-modes-reference.md) — 13 warm-standby, active-active, and cross-cutting RPO failure scenarios with detection queries and Spring Boot remediation patterns
 - [Test Scenarios](docs/test-scenarios.md) — Timeline-based failover and k6 validation scenarios for the current local stack

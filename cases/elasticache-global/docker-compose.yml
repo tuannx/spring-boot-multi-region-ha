@@ -1,0 +1,108 @@
+x-valkey-service: &valkey-service
+  image: valkey/valkey:8
+  restart: unless-stopped
+  healthcheck:
+    test:
+      - CMD
+      - valkey-cli
+      - ping
+    interval: 5s
+    timeout: 3s
+    retries: 30
+    start_period: 10s
+  networks:
+    - elasticache-multiregion
+
+services:
+  valkey-us:
+    <<: *valkey-service
+    container_name: multiregion-valkey-us
+    hostname: valkey-us
+    command:
+      - valkey-server
+      - --appendonly
+      - "yes"
+      - --protected-mode
+      - "no"
+    ports:
+      - "16379:6379"
+    volumes:
+      - valkey-us-data:/data
+
+  valkey-eu:
+    <<: *valkey-service
+    container_name: multiregion-valkey-eu
+    hostname: valkey-eu
+    command:
+      - valkey-server
+      - --appendonly
+      - "yes"
+      - --protected-mode
+      - "no"
+      - --replicaof
+      - valkey-us
+      - "6379"
+    ports:
+      - "16380:6379"
+    volumes:
+      - valkey-eu-data:/data
+    depends_on:
+      valkey-us:
+        condition: service_healthy
+
+  app-us:
+    build:
+      context: ./app
+    image: multiregion-elasticache-app-us:latest
+    container_name: multiregion-elasticache-app-us
+    environment:
+      SERVER_PORT: 8080
+      APP_REGION: us-east-1
+      VALKEY_HOST: valkey-us
+      VALKEY_PORT: 6379
+    ports:
+      - "8280:8080"
+    depends_on:
+      valkey-us:
+        condition: service_healthy
+    networks:
+      - elasticache-multiregion
+
+  app-eu:
+    build:
+      context: ./app
+    image: multiregion-elasticache-app-eu:latest
+    container_name: multiregion-elasticache-app-eu
+    environment:
+      SERVER_PORT: 8080
+      APP_REGION: eu-west-1
+      VALKEY_HOST: valkey-eu
+      VALKEY_PORT: 6379
+    ports:
+      - "8281:8080"
+    depends_on:
+      valkey-eu:
+        condition: service_healthy
+    networks:
+      - elasticache-multiregion
+
+  nginx-router:
+    image: nginx:1.31.5-alpine
+    container_name: multiregion-elasticache-router
+    ports:
+      - "8200:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app-us
+      - app-eu
+    networks:
+      - elasticache-multiregion
+
+volumes:
+  valkey-us-data:
+  valkey-eu-data:
+
+networks:
+  elasticache-multiregion:
+    name: elasticache-multiregion
