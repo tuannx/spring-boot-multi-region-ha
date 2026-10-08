@@ -11,7 +11,11 @@ class IngestPropertiesBindingTest {
 
     @Test
     void defaultsKeepKinesisLayerOff() {
-        IngestProperties props = Binder.get(new MockEnvironment())
+        // One explicit property so the Binder has an ingest.* source; every
+        // other value must come from the declared defaults.
+        MockEnvironment env = new MockEnvironment()
+                .withProperty("ingest.enabled", "false");
+        IngestProperties props = Binder.get(env)
                 .bind("ingest", Bindable.of(IngestProperties.class)).get();
         assertThat(props.enabled()).isFalse();
         assertThat(props.kinesisMode()).isFalse();
