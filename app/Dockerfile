@@ -13,8 +13,10 @@ RUN gradle clean build --no-daemon -x test --stacktrace 2>&1
 RUN cp /app/build/libs/*[!plain].jar /app/app.jar \
     && java -XX:AOTMode=record -XX:AOTConfiguration=/app/app.aotconf \
             -Dspring.context.exit=onRefresh -Dspring.jpa.hibernate.ddl-auto=none \
+            -Dspring.flyway.enabled=false \
             -jar /app/app.jar \
     && java -XX:AOTMode=create -XX:AOTConfiguration=/app/app.aotconf -XX:AOTCache=/app/app.aot \
+            -Dspring.flyway.enabled=false \
             -jar /app/app.jar \
     && rm -f /app/app.aotconf
 

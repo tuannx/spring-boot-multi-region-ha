@@ -2,6 +2,7 @@ package com.multiregion.product.web;
 
 import com.multiregion.product.application.ProductService;
 import com.multiregion.product.domain.Product;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -53,5 +54,11 @@ public class ProductResource {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.notFound().build();
+    }
+
+    @ExceptionHandler(BulkheadFullException.class)
+    public ResponseEntity<String> shedWriteLoad(BulkheadFullException rejected) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body("Write load shed: " + rejected.getMessage());
     }
 }
