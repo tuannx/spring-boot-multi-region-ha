@@ -90,6 +90,28 @@ fi
 rm -f docs/flows.visual-check.*
 
 # =========================================================
+# 4. ElastiCache Global Datastore (Valkey) Architecture
+# =========================================================
+echo "==> [Case 3] Validating ElastiCache Global (Valkey) architecture (showcase)..."
+node "${ARCHIFY_BIN}" validate architecture docs/elasticache-global.json --quality showcase --json
+
+echo "==> [Case 3] Delivering HTML to docs/elasticache-global.html..."
+node "${ARCHIFY_BIN}" deliver architecture docs/elasticache-global.json docs/elasticache-global.html --quality showcase --json
+
+echo "==> [Case 3] Running visual-check and capturing screenshots..."
+node "${ARCHIFY_BIN}" visual-check docs/elasticache-global.html --json
+
+if [[ -f "docs/elasticache-global.visual-check.1440x900.dark.png" ]]; then
+  cp "docs/elasticache-global.visual-check.1440x900.dark.png" "docs/assets/elasticache-global-dark.png"
+  echo "==> Generated docs/assets/elasticache-global-dark.png"
+fi
+if [[ -f "docs/elasticache-global.visual-check.1440x900.light.png" ]]; then
+  cp "docs/elasticache-global.visual-check.1440x900.light.png" "docs/assets/elasticache-global-light.png"
+  echo "==> Generated docs/assets/elasticache-global-light.png"
+fi
+rm -f docs/elasticache-global.visual-check.*
+
+# =========================================================
 # Multi-Diagram Navigation Dock for GitHub Pages
 # =========================================================
 inject_switcher() {
@@ -98,9 +120,11 @@ inject_switcher() {
   local aur_bg="transparent"
   local cas_bg="transparent"
   local flo_bg="transparent"
+  local ela_bg="transparent"
   local aur_border="transparent"
   local cas_border="transparent"
   local flo_border="transparent"
+  local ela_border="transparent"
 
   if [[ "$active_tab" == "aurora" ]]; then
     aur_bg="#2563eb"
@@ -111,9 +135,12 @@ inject_switcher() {
   elif [[ "$active_tab" == "flows" ]]; then
     flo_bg="#2563eb"
     flo_border="rgba(255,255,255,0.2)"
+  elif [[ "$active_tab" == "elasticache" ]]; then
+    ela_bg="#2563eb"
+    ela_border="rgba(255,255,255,0.2)"
   fi
 
-  local nav_html="<div id=\"archify-case-switcher\" style=\"position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;gap:6px;background:rgba(15,23,42,0.92);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.18);padding:5px 8px;border-radius:9999px;box-shadow:0 12px 30px rgba(0,0,0,0.6);font-family:system-ui,-apple-system,sans-serif;font-size:12.5px;font-weight:500;\"><a href=\"index.html\" style=\"padding:6px 14px;border-radius:9999px;text-decoration:none;color:#ffffff;transition:all .2s;background:${aur_bg};border:1px solid ${aur_border};display:flex;align-items:center;gap:6px;\"><span>📍</span> Case 1: Aurora HA (Single Writer)</a><a href=\"cassandra.html\" style=\"padding:6px 14px;border-radius:9999px;text-decoration:none;color:#ffffff;transition:all .2s;background:${cas_bg};border:1px solid ${cas_border};display:flex;align-items:center;gap:6px;\"><span>⚡</span> Case 2: Cassandra (Active-Active)</a><a href=\"flows.html\" style=\"padding:6px 14px;border-radius:9999px;text-decoration:none;color:#ffffff;transition:all .2s;background:${flo_bg};border:1px solid ${flo_border};display:flex;align-items:center;gap:6px;\"><span>🔄</span> HTTP Sync vs Queue Async Flows</a></div>"
+  local nav_html="<div id=\"archify-case-switcher\" style=\"position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;gap:6px;background:rgba(15,23,42,0.92);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.18);padding:5px 8px;border-radius:9999px;box-shadow:0 12px 30px rgba(0,0,0,0.6);font-family:system-ui,-apple-system,sans-serif;font-size:12.5px;font-weight:500;\"><a href=\"index.html\" style=\"padding:6px 14px;border-radius:9999px;text-decoration:none;color:#ffffff;transition:all .2s;background:${aur_bg};border:1px solid ${aur_border};display:flex;align-items:center;gap:6px;\"><span>📍</span> Case 1: Aurora HA (Single Writer)</a><a href=\"cassandra.html\" style=\"padding:6px 14px;border-radius:9999px;text-decoration:none;color:#ffffff;transition:all .2s;background:${cas_bg};border:1px solid ${cas_border};display:flex;align-items:center;gap:6px;\"><span>⚡</span> Case 2: Cassandra (Active-Active)</a><a href=\"flows.html\" style=\"padding:6px 14px;border-radius:9999px;text-decoration:none;color:#ffffff;transition:all .2s;background:${flo_bg};border:1px solid ${flo_border};display:flex;align-items:center;gap:6px;\"><span>🔄</span> HTTP Sync vs Queue Async Flows</a><a href=\"elasticache-global.html\" style=\"padding:6px 14px;border-radius:9999px;text-decoration:none;color:#ffffff;transition:all .2s;background:${ela_bg};border:1px solid ${ela_border};display:flex;align-items:center;gap:6px;\"><span>🧠</span> Case 3: ElastiCache Global (Valkey)</a></div>"
 
   # Remove existing switcher if present then inject
   sed -i '' -E 's|<div id="archify-case-switcher".*</div>||g' "$file"
@@ -124,5 +151,6 @@ inject_switcher() {
 inject_switcher "docs/index.html" "aurora"
 inject_switcher "docs/cassandra.html" "cassandra"
 inject_switcher "docs/flows.html" "flows"
+inject_switcher "docs/elasticache-global.html" "elasticache"
 
-echo "==> All 3 diagrams generated, verified, and linked successfully!"
+echo "==> All 4 diagrams generated, verified, and linked successfully!"

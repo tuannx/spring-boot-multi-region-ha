@@ -2,6 +2,7 @@ package com.multiregion.queue.config;
 
 import com.multiregion.queue.application.DynamicQueueListenerCoordinator;
 import com.multiregion.queue.application.LocalQueueListenerCoordinator;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -9,6 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnExpression("'${service.role:combined}' != 'ingest'")
 @ConditionalOnProperty(prefix = "queues", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class QueueCoordinationScheduler {
 
