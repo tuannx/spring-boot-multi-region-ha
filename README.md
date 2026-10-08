@@ -446,6 +446,30 @@ Since we're using standard PostgreSQL locally, the project includes mock `pg_cat
 
 The US region's init SQL identifies the local node as `postgres-us`; the EU region identifies its local node as `postgres-eu`. Before promotion both report `postgres-us` as writer and `postgres-eu` as reader. A product-table fencing trigger rejects writes whenever a local database is not in writer mode, so the Docker acceptance path proves an old writer cannot continue committing after demotion.
 
+## CI Decision Gate (ArcadeAttest)
+
+Every pull request is also evaluated by the ArcadeAttest Decision Gate
+(`.github/workflows/decision-gate.yml`), alongside the test, architecture
+and floci workflows. The Decision API runs locally inside the runner — no
+direct LLM decides anything (`llm_in_verdict: false` in every pack).
+
+- **Policy** lives in `.arcade-attest/decision-record.json` (`ADR-HA-001`,
+  mode `blocking`): no new architecture smells (fail), at most 25
+  responsibility shifts (warn), no component over 400 entities (warn),
+  plus the advisory ten-criterion scorecard with profile `auto`
+  (this repo resolves to `strict_gate`).
+- **Scope**: the gate analyzes `app/src/main/java` at the PR's real base
+  and head SHAs. Calibration on main: `PASS`, overall score `0.8`
+  (319 entities, largest component 116).
+- **Result**: the verdict and scorecard are posted as a PR comment and the
+  full evidence pack is uploaded as the `arcade-attest-evidence-pack`
+  artifact. A `BLOCK` verdict fails the job (`ENFORCE_BLOCK: "true"`).
+- **Changing policy**: thresholds and scoring weights are changed only in
+  the Decision Record, in a dedicated PR with measured evidence — never
+  lowered just to make a failing PR green. Set `ENFORCE_BLOCK` to
+  `"false"` in the workflow to run the gate advisory-only.
+- Full guide: [ArcadeAttest GitHub Actions guide](https://github.com/arcade-red-team/arcade-attest/blob/main/docs/GITHUB-ACTIONS.md).
+
 ## Testing Failover
 
 ### QuickPerf scheduled takeover checks
