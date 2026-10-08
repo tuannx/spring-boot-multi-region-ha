@@ -98,8 +98,10 @@ The system distinguishes two separate message flows with different reliability a
 - **Failover detection and activation**: Secondary region detects primary outage and activates only after writer authority is verified (unless the unsafe demo opt-in is enabled)
 - **Manual failover**: Admin endpoint for forced failover activation
 - **Resilience guards**: Circuit breaker fails topology probes fast during outages (non-connectivity failures keep refuse-to-promote semantics); write bulkhead sheds overload as 429
+- **Flyway-managed schema**: Versioned migrations (Aurora mock, fencing trigger, seeds) replace hand-synced init scripts; each app migrates its home database on startup
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
+- **Optional Kinesis ingest layer (Deere pattern)**: Kinesis in front of SQS for MTG messages, with a separate Ingest Service (deterministic `messageType` routing) in front of the Message Processor Service; off by default, selected by config (`ingest.mode=kinesis`, split by `service.role`) — see [docs/kinesis-ingest.md](docs/kinesis-ingest.md)
 - **Docker Compose**: Full stack runs locally with Docker
 - **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions and the edge router to a self-hosted SigNoz Docker stack
 - **Floci infrastructure profile**: AWS-compatible APIs provision RDS and Amazon MQ resources with real PostgreSQL and RabbitMQ data planes
