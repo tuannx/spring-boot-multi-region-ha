@@ -91,7 +91,9 @@ Ports:
 Floci backs ElastiCache with a real Valkey container (default image
 `valkey/valkey:8`, Redis/Valkey protocol with IAM auth and SigV4 validation).
 With the Floci profile running (`docker-compose.floci.yml`), provision one
-ElastiCache cluster per region through the AWS-compatible API:
+single-node ElastiCache replication group per region through the
+AWS-compatible API (the AWS provider only accepts `valkey` on
+`aws_elasticache_replication_group`, not on `aws_elasticache_cluster`):
 
 ```bash
 cd cases/elasticache-global/terraform
