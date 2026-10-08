@@ -34,7 +34,15 @@ class PklConfigPropertySourceTest {
         assertThat(propertySource.getProperty("spring.threads.virtual.enabled"))
                 .isEqualTo(true);
         assertThat(propertySource.getProperty("spring.jpa.hibernate.ddlAuto"))
-                .isEqualTo("update");
+                .isEqualTo("validate");
+        assertThat(propertySource.getProperty("spring.flyway.enabled"))
+                .isEqualTo(true);
+        assertThat(propertySource.getProperty("spring.flyway.baselineOnMigrate"))
+                .isEqualTo(true);
+        assertThat(String.valueOf(propertySource.getProperty("spring.flyway.baselineVersion")))
+                .isEqualTo("1");
+        assertThat(propertySource.getProperty("spring.flyway.validateOnMigrate"))
+                .isEqualTo(true);
         assertThat(propertySource.getProperty("spring.jpa.properties.hibernate.dialect"))
                 .isEqualTo("org.hibernate.dialect.PostgreSQLDialect");
         assertThat(propertySource.getProperty("management.endpoint.health.showDetails"))

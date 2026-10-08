@@ -14,6 +14,8 @@ class MultiRegionConfigTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 "appuser",
                 "apppass",
                 "appdb",
@@ -47,6 +49,8 @@ class MultiRegionConfigTest {
     @Test
     void keepsDeploymentEnvironmentOverridesAbovePklDefaults() {
         PklApplicationConfig defaults = new PklApplicationConfig(
+                null,
+                null,
                 null,
                 null,
                 null,
