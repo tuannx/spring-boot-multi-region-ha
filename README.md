@@ -10,6 +10,26 @@
 [![Message Flows](https://img.shields.io/badge/Message_Flows-HTTP_vs_Queue-purple?logo=rabbitmq&logoColor=white)](https://tuannx.github.io/spring-boot-multi-region-ha/flows.html)
 [![GitHub Pages](https://img.shields.io/badge/GitHub_Pages-Live_Diagram-brightgreen?logo=github)](https://tuannx.github.io/spring-boot-multi-region-ha/)
 
+## Start here (60 seconds)
+
+**What:** a runnable local lab for AWS multi-region high availability — kill the writer region and watch a fenced, verified failover, with no AWS account needed.
+
+```bash
+./scripts/demo.sh --start --open
+```
+
+**What you will see:** the live console at <http://localhost:8000/demo.html> with writer `postgres-us`, one-click switchover to `postgres-eu`, writes converging on the new writer while each app keeps reading from its home region. Explore first: [Interactive Architecture Explorer](https://tuannx.github.io/spring-boot-multi-region-ha/) · [Message Flows: HTTP vs Queue](https://tuannx.github.io/spring-boot-multi-region-ha/flows.html)
+
+**Limits:** this is a local simulation (PostgreSQL plus mock Aurora topology functions); it does not emulate Aurora replication lag/quorum or AWS networking. License: [MIT](LICENSE). Prerequisites: Docker Compose v2 and `curl`/`jq`.
+
+Baseline (writer in US) → after switchover (writer in EU):
+
+| Baseline | After switchover |
+|---|---|
+| ![Live demo console at baseline: writer postgres-us](docs/assets/demo-console-baseline.png) | ![Live demo console after switchover: writer postgres-eu](docs/assets/demo-console-failover.png) |
+
+**Deep dive:** architecture, failover semantics, and full setup continue below — start with [How Multi-Region Failover Works](#how-multi-region-failover-works) or the [Quick Start](#quick-start).
+
 A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** `failover2` plugin. This project simulates Aurora topology and control-plane state with local PostgreSQL instances, including bounded failover detection, runtime writer routing, nginx request routing, and region-aware health monitoring.
 
 The repository also includes an independent
