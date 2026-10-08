@@ -61,7 +61,7 @@ dependencies {
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-webmvc-test")
-    testImplementation("com.tngtech.archunit:archunit-junit5:1.5.0")
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.5.1")
     testImplementation("org.quickperf:quick-perf-junit5:1.1.0")
     testImplementation("org.quickperf:quick-perf-sql-annotations:1.1.0")
     testRuntimeOnly("com.h2database:h2")
