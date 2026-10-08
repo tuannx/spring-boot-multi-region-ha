@@ -14,7 +14,7 @@ import java.net.SocketTimeoutException;
 import java.sql.SQLException;
 import java.util.List;
 
-@Repository
+@Repository("jdbcAuroraTopologyGateway")
 public class JdbcAuroraTopologyGateway implements AuroraTopologyGateway {
 
     private static final String CURRENT_WRITER_SQL = """

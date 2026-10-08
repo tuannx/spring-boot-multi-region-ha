@@ -229,7 +229,7 @@ terraform_in_floci apply \
   -var="floci_eu_endpoint=$FLOCI_EU_ENDPOINT" \
   -var="database_password=$FLOCI_DATABASE_PASSWORD"
 
-# Floci 2.0.1 exposes RabbitMQ users from DescribeBroker, which makes the
+# Floci exposes RabbitMQ users from DescribeBroker, which makes the
 # Terraform AWS provider call the unsupported standalone DescribeUser API.
 # Provision through the same AWS-compatible endpoint until floci-io/floci#1951
 # is released, then move these brokers back into the Terraform module.
@@ -268,12 +268,8 @@ compose up --detach postgres-us postgres-eu rabbitmq-us rabbitmq-eu db-tools
 wait_for_postgres postgres-us
 wait_for_postgres postgres-eu
 
-docker exec -i -e "PGPASSWORD=$FLOCI_DATABASE_PASSWORD" spring-ha-floci-db-tools \
-  psql -v ON_ERROR_STOP=1 -h postgres-us -p 5432 -U appuser -d appdb \
-  < "$ROOT_DIR/docker/init/us/01-init.sql"
-docker exec -i -e "PGPASSWORD=$FLOCI_DATABASE_PASSWORD" spring-ha-floci-db-tools \
-  psql -v ON_ERROR_STOP=1 -h postgres-eu -p 5432 -U appuser -d appdb \
-  < "$ROOT_DIR/docker/init/eu/01-init.sql"
+# Schema is Flyway-managed: each app migrates its home database on startup
+# (after this point), so no manual psql apply step remains here.
 
 aws --endpoint-url "$FLOCI_US_ENDPOINT" --region us-east-1 \
   rds describe-db-instances --db-instance-identifier postgres-us \
