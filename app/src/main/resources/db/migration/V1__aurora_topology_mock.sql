@@ -1,10 +1,29 @@
--- Mock Aurora PostgreSQL functions for Region 1 (us-east-1)
+-- V1: Aurora topology mock, demo tables, fencing trigger, and seed data.
+--
+-- Unifies the former docker/init/us + docker/init/eu 01-init.sql pair, which
+-- differed only in region-varying values. Each application instance migrates
+-- its own home database, so placeholders resolve per region:
+--   flywaySelfInstance / flywayPeerInstance : postgres-us / postgres-eu
+--   flywaySelfCpu / flywayPeerCpu           : 10 / 8 (per-instance mock load)
+--   flywayRegion                             : us-east-1 / eu-west-1
+--   flywayWriterMode                         : TRUE (us) / FALSE (eu)
+--   flywayRegionalProductName/Price          : regional seed row
+--
+-- Replica row order is self-first in both branches. Consumers filter by
+-- SESSION_ID or ORDER BY SERVER_ID, so the order is immaterial; the row SET
+-- per branch matches the legacy scripts exactly. products.id keeps the legacy
+-- SERIAL type verbatim so baseline-on-migrate stays honest for pre-existing
+-- volumes; V2 converges it to the BIGINT the Product entity requires.
+-- Seed INSERTs intentionally run BEFORE the fencing trigger is created, so the
+-- initial rows land even on the reader region.
+
+-- Mock Aurora PostgreSQL functions for this region.
 -- Giúp AWS JDBC Driver detect topology như Aurora thật
 
 -- Giả lập: trả về instance ID hiện tại
 CREATE OR REPLACE FUNCTION pg_catalog.aurora_db_instance_identifier()
 RETURNS TEXT AS $$
-  SELECT 'postgres-us'::TEXT
+  SELECT '${flywaySelfInstance}'::TEXT
 $$ LANGUAGE SQL IMMUTABLE;
 
 -- Local promotion state used by the Docker failover control-plane mock.
@@ -15,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.failover_control (
 );
 
 INSERT INTO public.failover_control (singleton, writer_mode)
-VALUES (TRUE, TRUE)
+VALUES (TRUE, ${flywayWriterMode})
 ON CONFLICT (singleton) DO NOTHING;
 
 -- Schema match với query của AWS JDBC Driver:
@@ -39,18 +58,17 @@ BEGIN
 
   IF local_writer THEN
     RETURN QUERY VALUES
-      ('postgres-us'::TEXT, 'MASTER_SESSION_ID'::TEXT, 10::INTEGER, 0::INTEGER, NOW()::TIMESTAMP),
-      ('postgres-eu'::TEXT, 'postgres-eu'::TEXT,          8::INTEGER, 85::INTEGER, NOW()::TIMESTAMP);
+      ('${flywaySelfInstance}'::TEXT, 'MASTER_SESSION_ID'::TEXT, ${flywaySelfCpu}::INTEGER, 0::INTEGER, NOW()::TIMESTAMP),
+      ('${flywayPeerInstance}'::TEXT, '${flywayPeerInstance}'::TEXT,          ${flywayPeerCpu}::INTEGER, 85::INTEGER, NOW()::TIMESTAMP);
   ELSE
     RETURN QUERY VALUES
-      ('postgres-us'::TEXT, 'postgres-us'::TEXT,          10::INTEGER, 85::INTEGER, NOW()::TIMESTAMP),
-      ('postgres-eu'::TEXT, 'MASTER_SESSION_ID'::TEXT,     8::INTEGER, 0::INTEGER, NOW()::TIMESTAMP);
+      ('${flywaySelfInstance}'::TEXT, '${flywaySelfInstance}'::TEXT,          ${flywaySelfCpu}::INTEGER, 85::INTEGER, NOW()::TIMESTAMP),
+      ('${flywayPeerInstance}'::TEXT, 'MASTER_SESSION_ID'::TEXT, ${flywayPeerCpu}::INTEGER, 0::INTEGER, NOW()::TIMESTAMP);
   END IF;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- Giả lập: check instance hiện tại có phải writer không
--- (chỉ instance-us-001 là writer)
 CREATE OR REPLACE FUNCTION pg_catalog.aurora_is_writer()
 RETURNS BOOLEAN AS $$
   SELECT writer_mode
@@ -77,7 +95,7 @@ CREATE TABLE IF NOT EXISTS products (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   price DECIMAL(10,2) NOT NULL,
-  region VARCHAR(50) DEFAULT 'us-east-1',
+  region VARCHAR(50) DEFAULT '${flywayRegion}',
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -106,9 +124,9 @@ ON CONFLICT (queue_name, region) DO NOTHING;
 
 -- Insert sample data
 INSERT INTO products (name, price, region) VALUES
-  ('Global Product A', 29.99, 'us-east-1'),
-  ('Global Product B', 49.99, 'us-east-1'),
-  ('Regional Product US', 19.99, 'us-east-1');
+  ('Global Product A', 29.99, '${flywayRegion}'),
+  ('Global Product B', 49.99, '${flywayRegion}'),
+  ('${flywayRegionalProductName}', ${flywayRegionalProductPrice}, '${flywayRegion}');
 
 -- The local Docker databases are independent, so enforce the single-writer
 -- invariant at the table boundary instead of treating writer_mode as a
@@ -118,7 +136,7 @@ CREATE OR REPLACE FUNCTION public.require_product_writer_mode()
 RETURNS TRIGGER AS $$
 BEGIN
   IF NOT pg_catalog.aurora_is_writer() THEN
-    RAISE EXCEPTION 'product writes are fenced on reader postgres-us'
+    RAISE EXCEPTION 'product writes are fenced on reader ${flywaySelfInstance}'
       USING ERRCODE = '25006';
   END IF;
   IF TG_OP = 'DELETE' THEN

@@ -1,5 +1,6 @@
 package com.multiregion.platform.routing;
 
+import io.github.resilience4j.bulkhead.Bulkhead;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,7 +36,7 @@ class RoutingDataSourceIntegrationTest {
                 reader,
                 promotedWriter);
         routingDataSource = config.routingDataSource(regionalRoutingDataSource);
-        dataRoute = new RoutingProductDataRoute();
+        dataRoute = new RoutingProductDataRoute(Bulkhead.ofDefaults("routing-test"));
     }
 
     @Test
