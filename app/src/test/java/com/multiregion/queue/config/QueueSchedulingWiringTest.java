@@ -24,6 +24,10 @@ class QueueSchedulingWiringTest {
                 .isEqualTo("queueTaskScheduler");
         assertThat(takeoverReconciliation.getAnnotation(Scheduled.class).scheduler())
                 .isEqualTo("queueTaskScheduler");
+        assertThat(takeoverReconciliation.getAnnotation(Scheduled.class).fixedDelayString())
+                .isEqualTo("${queues.takeoverPollIntervalMs:60000}");
+        assertThat(takeoverReconciliation.getAnnotation(Scheduled.class).fixedRateString())
+                .isEmpty();
         assertThat(schedulerFactory.getAnnotation(Bean.class).name())
                 .containsExactly("queueTaskScheduler");
 

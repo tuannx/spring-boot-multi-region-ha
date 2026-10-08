@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.flyway.autoconfigure.FlywayDataSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -140,6 +141,7 @@ public class DatabaseConnections {
     }
 
     @Bean
+    @FlywayDataSource
     public DataSource localAdminDataSource() {
         String host = resolvedLocalDbHost();
         String url = advancedJdbcUrl(host, localDbPort);
@@ -199,6 +201,7 @@ public class DatabaseConnections {
         dataSource.setValidationTimeout(2000);
         dataSource.setIdleTimeout(30000);
         dataSource.setMaxLifetime(60000);
+        dataSource.setInitializationFailTimeout(-1);
         dataSource.setConnectionTestQuery("SELECT 1");
         dataSource.setReadOnly(readOnly);
         return dataSource;

@@ -2,6 +2,7 @@
 
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1.1-brightgreen)](https://spring.io/projects/spring-boot)
 [![Java](https://img.shields.io/badge/Java-26.0.2-orange)](https://jdk.java.net/26/)
+[![Project Leyden](https://img.shields.io/badge/Project%20Leyden-AOT%20Cache-blue)](docs/project-leyden-aot.md)
 [![AWS JDBC Driver](https://img.shields.io/badge/AWS%20JDBC%20Driver-4.4.0-orange)](https://github.com/aws/aws-advanced-jdbc-wrapper)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18.6-blue)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)](https://www.docker.com/)
@@ -9,12 +10,34 @@
 [![Message Flows](https://img.shields.io/badge/Message_Flows-HTTP_vs_Queue-purple?logo=rabbitmq&logoColor=white)](https://tuannx.github.io/spring-boot-multi-region-ha/flows.html)
 [![GitHub Pages](https://img.shields.io/badge/GitHub_Pages-Live_Diagram-brightgreen?logo=github)](https://tuannx.github.io/spring-boot-multi-region-ha/)
 
+## Start here (60 seconds)
+
+**What:** a runnable local lab for AWS multi-region high availability — kill the writer region and watch a fenced, verified failover, with no AWS account needed.
+
+```bash
+./scripts/demo.sh --start --open
+```
+
+**What you will see:** the live console at <http://localhost:8000/demo.html> with writer `postgres-us`, one-click switchover to `postgres-eu`, writes converging on the new writer while each app keeps reading from its home region. Explore first: [Interactive Architecture Explorer](https://tuannx.github.io/spring-boot-multi-region-ha/) · [Message Flows: HTTP vs Queue](https://tuannx.github.io/spring-boot-multi-region-ha/flows.html)
+
+**Limits:** this is a local simulation (PostgreSQL plus mock Aurora topology functions); it does not emulate Aurora replication lag/quorum or AWS networking. License: [MIT](LICENSE). Prerequisites: Docker Compose v2 and `curl`/`jq`.
+
+Baseline (writer in US) → after switchover (writer in EU):
+
+| Baseline | After switchover |
+|---|---|
+| ![Live demo console at baseline: writer postgres-us](docs/assets/demo-console-baseline.png) | ![Live demo console after switchover: writer postgres-eu](docs/assets/demo-console-failover.png) |
+
+**Deep dive:** architecture, failover semantics, and full setup continue below — start with [How Multi-Region Failover Works](#how-multi-region-failover-works) or the [Quick Start](#quick-start).
+
 A Spring Boot application demonstrating multi-region high availability using the **AWS Advanced JDBC Wrapper** `failover2` plugin. This project simulates Aurora topology and control-plane state with local PostgreSQL instances, including bounded failover detection, runtime writer routing, nginx request routing, and region-aware health monitoring.
 
 The repository also includes an independent
 [`Cassandra multi-region case`](cases/cassandra/README.md) for workloads that
 need active-active regional writes rather than Aurora's fenced single-writer
-model.
+model, and an
+[`ElastiCache Global Datastore (Valkey) case`](cases/elasticache-global/README.md)
+for primary/replica caching with asynchronous cross-region replication.
 
 <p align="center">
   <a href="https://tuannx.github.io/spring-boot-multi-region-ha/">
@@ -33,8 +56,8 @@ model.
 
 ```text
                          ┌─────────────────────────────────────────────┐
-                         │           nginx-router (port 8000)          │
-                         │    Routes requests to source/home region    │
+                         │      ServiceTalk Router (port 8000)         │
+                         │   Locality Priority (P0 -> P1) & Failover   │
                          └──────────┬──────────────────────┬───────────┘
                                     │                      │
                     ┌───────────────┘                      └───────────────┐
@@ -64,7 +87,7 @@ The architecture deliberately separates read and write routing:
 
 - **Writer — follow the sun:** both application regions send mutations to the same authoritative global writer. A fenced, verified switchover can move that writer from US to EU (or back); there is never more than one writer.
 - **Reader — home region:** `app-us` reads from `postgres-us`, while `app-eu` reads from `postgres-eu`. Moving the writer does not move the normal read route.
-- **Compute — source region:** nginx sends a request to the application region matching `X-Source-Region`; the selected app then applies the writer/reader rules above.
+- **Compute — source region:** ServiceTalk router sends a request to the application region matching `X-Source-Region` (P0 local priority) with fast failover (P1) if unhealthy; the selected app then applies the writer/reader rules above.
 
 In the local demo the initial writer is `postgres-us`, and the demonstrated switchover moves it to `postgres-eu`. “Follow the sun” describes this controlled ownership handoff; it is not an automatic clock-based scheduler or an active-active/multi-writer design.
 
@@ -72,7 +95,7 @@ In the local demo the initial writer is `postgres-us`, and the demonstrated swit
 
 The system distinguishes two separate message flows with different reliability and failover contracts:
 
-1. **Synchronous HTTP Ingress (REST API)**: Client requests arrive through `nginx-router` (:8000), routed to regional compute nodes via `X-Source-Region`. Reads execute against local PostgreSQL (Home-Region Reads), while mutations route synchronously to the global writer (Follow-the-Sun Writer).
+1. **Synchronous HTTP Ingress (REST API)**: Client requests arrive through `servicetalk-router` (:8000), routed to regional compute nodes via Locality Priority ($P_0 \to P_1$) and `X-Source-Region`. Reads execute against local PostgreSQL (Home-Region Reads), while mutations route synchronously to the global writer (Follow-the-Sun Writer). Legacy Nginx router is available on profile `legacy-nginx` (:8001).
 2. **Asynchronous Event Ingress (AMQP Queue)**: Events publish to regional RabbitMQ brokers and are consumed by dedicated local Spring Boot listener containers (`orders` queue, retry queue, and DLQ). During a regional disaster recovery (DR) outage, listener takeover is governed by PostgreSQL lease coordination (`queue_region_status`), allowing the surviving region to dynamically take over and drain remote queues without involving Nginx.
 
 <p align="center">
@@ -92,15 +115,19 @@ The system distinguishes two separate message flows with different reliability a
 - **Multi-region topology**: Simulates two AWS regions (us-east-1 and eu-west-1)
 - **Follow-the-sun writer**: One global writer can move between regions through a fenced, verified switchover
 - **Home-region readers**: Each application reads from its own regional database regardless of writer location
+- **Project Leyden AOT Cache**: Pre-computed Ahead-of-Time class loading and linking on OpenJDK/Corretto 26 (~50% context startup reduction) without breaking reflection or native reachability
 - **AWS JDBC Wrapper**: Failover-aware initial writer/reader pools via `failover2`
 - **Failover detection and activation**: Secondary region detects primary outage and activates only after writer authority is verified (unless the unsafe demo opt-in is enabled)
 - **Manual failover**: Admin endpoint for forced failover activation
+- **Resilience guards**: Circuit breaker fails topology probes fast during outages (non-connectivity failures keep refuse-to-promote semantics); write bulkhead sheds overload as 429
+- **Flyway-managed schema**: Versioned migrations (Aurora mock, fencing trigger, seeds) replace hand-synced init scripts; each app migrates its home database on startup
 - **Health monitoring**: Region-aware health checks with topology visibility
 - **Dynamic queue listener coordination**: Database-backed DR state lets a healthy brother region take over regional listeners after switchover, then auto-release the lease
+- **Optional Kinesis ingest layer (Deere pattern)**: Kinesis in front of SQS for MTG messages, with a separate Ingest Service (deterministic `messageType` routing) in front of the Message Processor Service; off by default, selected by config (`ingest.mode=kinesis`, split by `service.role`) — see [docs/kinesis-ingest.md](docs/kinesis-ingest.md)
 - **Docker Compose**: Full stack runs locally with Docker
-- **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions to a self-hosted SigNoz Docker stack
+- **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions and the edge router to a self-hosted SigNoz Docker stack
 - **Floci infrastructure profile**: AWS-compatible APIs provision RDS and Amazon MQ resources with real PostgreSQL and RabbitMQ data planes
-- **Nginx request routing**: Static source-region routing for the local demo
+- **ServiceTalk Locality Router**: Non-blocking edge router with Envoy/ServiceTalk Locality Priority ($P_0 \to P_1$), passive outlier detection, and zero-latency-penalty failover (legacy Nginx available under `legacy-nginx` profile)
 - **Region-aware config**: Typed Pkl defaults plus profile-based regional overrides
 
 ## Quick Start
@@ -118,10 +145,38 @@ The system distinguishes two separate message flows with different reliability a
 |------|-------------|-------------------|--------------------------|------------|
 | Aurora/PostgreSQL (root stack) | Fenced single global writer | Writer authority + home-region reads | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/) | `./scripts/e2e-acceptance.sh --start --cleanup --verify-failover` |
 | [Cassandra](cases/cassandra/README.md) | Active-active across two datacenters | `LOCAL_QUORUM`, RF=3 per DC | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/cassandra.html) | `./scripts/cassandra-e2e.sh --start --cleanup` |
+| [ElastiCache Global (Valkey)](cases/elasticache-global/README.md) | Single primary, read-only replicas | Async replication, measured stale-read window | [Open Map ↗](https://tuannx.github.io/spring-boot-multi-region-ha/elasticache-global.html) | `./scripts/elasticache-global-e2e.sh --start --cleanup` |
+| [ServiceTalk Locality Router](cases/servicetalk-router/README.md) | Default edge router replacing Nginx | Locality Priority ($P_0 \to P_1$), 0ms failover penalty | [Router Case ↗](cases/servicetalk-router/README.md) | `./scripts/servicetalk-stress-test.sh` |
 
 The cases are separate because their failure semantics are different. The
 Cassandra flow moves traffic to the surviving application/datacenter during a
 complete regional outage; it does not reuse the Aurora writer-promotion code.
+
+### One-shot live demo (recommended)
+
+Runs the full HA story in a single command and writes timestamped evidence to
+`reports/demo/`:
+
+```bash
+./scripts/demo.sh --start --open
+```
+
+Then watch the live console at <http://localhost:8000/demo.html>: animated
+write/read paths, per-region health + topology + queue state, one-click
+writer/reader and fencing drills, and an event timeline with Markdown export.
+Add `--kill` for the kill-old-writer phase, `--pause` to step phases manually
+for presentations.
+
+**Baseline — writer in US, both regions healthy.** Note the timeline proving the
+writer/reader split: a row written via EU is FOUND from US (writer) but 404
+from EU (home-region read).
+
+![Live demo console at baseline: writer postgres-us, write paths converge on US](docs/assets/demo-console-baseline.png)
+
+**After switchover — writer in EU.** The badge, topology paths, and per-region
+tables all flip to `postgres-eu`; a write via the US app now lands in EU.
+
+![Live demo console after switchover: writer postgres-eu, write paths converge on EU](docs/assets/demo-console-failover.png)
 
 ### 1. Clone and start
 
@@ -299,7 +354,7 @@ complete provisioning and acceptance flow with:
 
 The script:
 
-1. Starts one pinned `floci/floci:2.0.1` control plane per region so resources
+1. Starts one pinned `floci/floci:2.2.0` control plane per region so resources
    and failure domains are isolated.
 2. Applies `infra/floci/terraform` against both Floci endpoints for two RDS
    instances using the latest AWS provider 6.x compatibility path.
@@ -317,6 +372,28 @@ Use `--keep` instead of `--cleanup` to leave the verified environment running.
 The Floci environment proves AWS API/IaC compatibility and real local data-plane
 wiring. It does not claim to emulate Aurora Global Database replication, lag,
 quorum, or AWS networking; those still require an AWS acceptance environment.
+
+## Project Leyden AOT Cache Acceleration
+
+This project integrates OpenJDK **Project Leyden** Ahead-of-Time (AOT) caching on Amazon Corretto 26 to achieve near-instantaneous container initialization without compromising HotSpot runtime features or third-party libraries.
+
+### Key Highlights
+- **~50% Startup Reduction**: Spring `WebApplicationContext` initialization drops from **1,546 ms to 784 ms**; container time-to-healthy drops from **2,840 ms to 1,485 ms** (1.9x faster).
+- **Zero Closed-World Constraints**: Full dynamic proxying and reflection support for AWS Advanced JDBC Wrapper, Apple Pkl (`pkl-spring`), and Hibernate without custom reachability metadata.
+- **Docker Multi-Stage Bake**: An automated 2-step training workflow (`-XX:AOTMode=record` + `-XX:AOTMode=create`) embeds a pre-computed 121.8 MB `app.aot` cache into the Alpine production image.
+- **Offline Resilient Training**: Database connection pool fail-fast is relaxed during AOT training (`dataSource.setInitializationFailTimeout(-1)`), enabling build-time caching without active database instances.
+
+### Run Benchmark
+```bash
+./scripts/leyden-benchmark.sh
+```
+
+### Configuration & Runtime Toggling
+Leyden AOT is enabled by default in the application container:
+- **Default (AOT Enabled)**: `JAVA_OPTS="-XX:AOTMode=on -XX:AOTCache=/app/app.aot"`
+- **Baseline Fallback (Standard HotSpot JIT)**: Set `JAVA_OPTS=""` in `docker-compose.yml` or container environment.
+
+See the complete [Project Leyden AOT Integration Guide](docs/project-leyden-aot.md) for deep-dive architecture, training commands, and HotSpot internals.
 
 ## How Multi-Region Failover Works
 
@@ -370,6 +447,17 @@ Since we're using standard PostgreSQL locally, the project includes mock `pg_cat
 The US region's init SQL identifies the local node as `postgres-us`; the EU region identifies its local node as `postgres-eu`. Before promotion both report `postgres-us` as writer and `postgres-eu` as reader. A product-table fencing trigger rejects writes whenever a local database is not in writer mode, so the Docker acceptance path proves an old writer cannot continue committing after demotion.
 
 ## Testing Failover
+
+### QuickPerf scheduled takeover checks
+
+```bash
+gradle -p app test --tests '*ScheduledTakeoverQuickPerfTest' --rerun-tasks
+```
+
+QuickPerf enforces one SELECT per scheduled takeover tick, with no writes,
+across healthy, failed, recovered, expired, local-down, slow-listener and
+1,000-queue scenarios. These tests also run in the normal `gradle -p app test`
+CI gate. See [measurement scope and results](docs/quickperf-takeover.md).
 
 ### Automated Failover Test
 
@@ -630,6 +718,16 @@ defaults to US. The E2E verifies the post-switchover route through port 8000
 with `X-Source-Region: eu-west-1`. This is not a production traffic director;
 global ingress health/failover remains an external control-plane responsibility.
 
+### Why Project Leyden AOT instead of GraalVM Native Image?
+
+When optimizing cold starts for multi-region container failovers, GraalVM Native Image (`oracle/graal`) was evaluated alongside OpenJDK Project Leyden. GraalVM Native Image was rejected due to four hard architectural blockers:
+1. **JDK 26 Support**: The project targets Java 26 language level; GraalVM CE only supports up to JDK 25.
+2. **AWS Advanced JDBC Wrapper**: Lacks GraalVM reachability metadata for v4.4.0 (AWS Issue #1345) and relies heavily on dynamic driver proxies.
+3. **Apple Pkl Configuration (`pkl-spring`)**: Bundles Truffle Polyglot without JPMS module descriptors, triggering fatal SubstrateVM initialization conflicts (`ForceOnModulePath` and missing `HotSpotMethod` substitutions).
+4. **Agent Observability**: Native executables cannot load the standard `-javaagent:opentelemetry-javaagent.jar`.
+
+Project Leyden provides a ~50% reduction in context startup with zero closed-world sacrifices, keeping full HotSpot compatibility, standard debugging, and dynamic instrumentation intact. See [docs/project-leyden-aot.md](docs/project-leyden-aot.md) for full comparison.
+
 ## Development
 
 ### Local Development without Docker
@@ -664,6 +762,8 @@ java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
 ## Related Resources
 
 - [Cassandra Multi-Region Case](cases/cassandra/README.md) — runnable two-datacenter active-active topology with regional traffic failover
+- [ElastiCache Global Datastore (Valkey) Case](cases/elasticache-global/README.md) — two-region Valkey primary/replica with promotion failover and a measured stale-read window
+- [Project Leyden AOT Guide](docs/project-leyden-aot.md) — OpenJDK 26 Ahead-of-Time cache architecture, training pipeline, and benchmark metrics
 - [RPO Failure Modes Reference](docs/rpo-failure-modes-reference.md) — 13 warm-standby, active-active, and cross-cutting RPO failure scenarios with detection queries and Spring Boot remediation patterns
 - [Test Scenarios](docs/test-scenarios.md) — Timeline-based failover and k6 validation scenarios for the current local stack
 - [AWS Advanced JDBC Wrapper](https://github.com/aws/aws-advanced-jdbc-wrapper) — The official AWS JDBC wrapper with Aurora failover support
@@ -674,4 +774,4 @@ java -jar build/libs/multiregion-app-0.0.1-SNAPSHOT.jar \
 
 ## License
 
-MIT
+[MIT](LICENSE)
