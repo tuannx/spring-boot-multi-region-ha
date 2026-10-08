@@ -37,6 +37,16 @@ dependencies {
     // AWS Advanced JDBC Wrapper with Global Database failover
     implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.4.0")
 
+    // Optional Kinesis ingest layer (Deere pattern: Kinesis in front of SQS).
+    // Only used when ingest.enabled=true; clients are built manually in
+    // IngestConfiguration so no Spring Cloud AWS magic is involved.
+    implementation(platform("software.amazon.awssdk:bom:2.29.45"))
+    implementation("software.amazon.awssdk:kinesis")
+    implementation("software.amazon.awssdk:sqs")
+    implementation("software.amazon.awssdk:auth")
+    implementation("software.amazon.awssdk:regions")
+    implementation("software.amazon.awssdk:url-connection-client")
+
     // Testing
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-webmvc-test")

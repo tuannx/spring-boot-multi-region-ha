@@ -15,6 +15,10 @@ info: Info = new {}
 
 queues: Queues = new {}
 
+service: Service = new {}
+
+ingest: Ingest = new {}
+
 DB_USER: String = "appuser"
 
 DB_PASS: String = "apppass"
@@ -199,4 +203,55 @@ class RabbitMq {
 class RegionBroker {
   host: String = "localhost"
   port: UInt16 = 5672
+}
+
+class Service {
+  /// combined = Ingest + Processor in one process (default, backward compatible).
+  /// ingest = only the Kinesis -> SQS routing layer.
+  /// processor = only the SQS/RabbitMQ message-processing listeners.
+  role: "combined" | "ingest" | "processor" = "combined"
+}
+
+class Ingest {
+  /// Master switch for the Kinesis front layer. Off = legacy direct path
+  /// (producer straight to SQS/RabbitMQ, no Kinesis hop).
+  enabled: Boolean = false
+  /// direct = bypass Kinesis; kinesis = Kinesis stream in front of SQS.
+  mode: "direct" | "kinesis" = "direct"
+  streamName: String = "mtg-ingest"
+  /// Stream region; defaults to the app region when empty.
+  streamRegion: String = ""
+  /// LocalStack/Floci endpoint, e.g. http://localstack:4566. Empty = real AWS.
+  endpointOverride: String = ""
+  shardPollIntervalMs: Int(isBetween(100, 60_000)) = 1000
+  maxRecordsPerPoll: Int(isBetween(1, 10_000)) = 100
+  position: "TRIM_HORIZON" | "LATEST" = "TRIM_HORIZON"
+  destination: IngestDestination = new {}
+  routing: IngestRouting = new {}
+}
+
+class IngestDestination {
+  /// logging = local dev without AWS; sqs = Amazon SQS (LocalStack/Floci
+  /// endpoint locally, real SQS in AWS). The Message Processor Service then
+  /// consumes from SQS (or the existing RabbitMQ queues in the local lab).
+  type: "logging" | "sqs" = "logging"
+  sqs: SqsDestination = new {}
+}
+
+class SqsDestination {
+  /// Physical queue name = pattern(logicalQueue, region), e.g. orders-us-east-1.
+  queueNamePattern: String = "%s-%s"
+  fifo: Boolean = false
+  /// Empty inherits ingest.endpointOverride.
+  endpointOverride: String = ""
+}
+
+class IngestRouting {
+  defaultQueue: String = "orders"
+  /// messageType -> logical queue name (deterministic, no LLM routing).
+  rules: Map<String, String> = Map(
+    "MTG_ORDER", "orders",
+    "MTG_PAYMENT", "billing",
+    "MTG_EVENT", "orders"
+  )
 }
