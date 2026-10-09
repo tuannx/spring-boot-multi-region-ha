@@ -51,7 +51,7 @@ dependencies {
     // Optional Kinesis ingest layer (Deere pattern: Kinesis in front of SQS).
     // Only used when ingest.enabled=true; clients are built manually in
     // IngestConfiguration so no Spring Cloud AWS magic is involved.
-    implementation(platform("software.amazon.awssdk:bom:2.29.45"))
+    implementation(platform("software.amazon.awssdk:bom:2.55.11"))
     implementation("software.amazon.awssdk:kinesis")
     implementation("software.amazon.awssdk:sqs")
     implementation("software.amazon.awssdk:auth")
