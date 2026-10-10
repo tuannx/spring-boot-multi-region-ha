@@ -185,7 +185,7 @@ jobs:
 
       - name: Upload the evidence pack
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: arcade-attest-evidence-pack
           path: |
