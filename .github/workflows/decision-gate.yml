@@ -39,7 +39,7 @@ env:
   # Pinned ArcadeAttest source. Pin to a commit SHA for reproducible gates;
   # bump deliberately, never to a floating "latest". pip extras go before
   # the "@" for VCS installs ("pkg[extra] @ git+...@SHA").
-  ATTEST_INSTALL: "arcade-attest[api] @ git+https://github.com/arcade-red-team/arcade-attest@a3595bc96c6ad49fe6c001d7ee666396fab8c6ea"
+  ATTEST_INSTALL: "arcade-attest[api] @ git+https://github.com/arcade-red-team/arcade-attest@78eec7f9d2f0c2eb9a2ffc92139314b516dfc960"
   ATTEST_PORT: "8787"
   # --- Qxotic Jinfer (local LLM explanation draft) ---
   # "true" appends a Jinfer-drafted explanation to the PR comment.
