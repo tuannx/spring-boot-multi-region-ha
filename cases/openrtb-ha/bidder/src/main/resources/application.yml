@@ -1,0 +1,60 @@
+spring:
+  application:
+    name: bidder
+  threads:
+    virtual:
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/openrtb}
+    username: ${DB_USER:openrtb}
+    password: ${DB_PASSWORD:openrtb}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Fail fast. A stalled connection attempt must not hold up the budget refresh or a billing notice.
+      connection-timeout: 2000
+  sql:
+    init:
+      mode: always
+      # schema.sql is idempotent. continue-on-error lets an instance start while the database is down.
+      continue-on-error: true
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+bidder:
+  instance-id: ${INSTANCE_ID:bidder-local}
+  # Base URL the exchange calls for notices. Behind the load balancer, set this to the LB address.
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080}
+  bid-exp-seconds: 300
+  deadline:
+    default-tmax-ms: 100
+    max-tmax-ms: 1000
+    safety-margin-ms: 10
+  budget:
+    refresh-ms: 500
+  campaigns:
+    - id: cmp-banner-001
+      cpm: 4.50
+      budget-usd: 1000.00
+      crid: creative-001
+      adm: '<a href="https://advertiser-a.example/"><img src="https://cdn.example/a-300x250.png" width="300" height="250" alt="Advertiser A"></a>'
+      adomain: [advertiser-a.example]
+    - id: cmp-banner-002
+      cpm: 2.00
+      budget-usd: 500.00
+      crid: creative-002
+      adm: '<a href="https://advertiser-b.example/"><img src="https://cdn.example/b-300x250.png" width="300" height="250" alt="Advertiser B"></a>'
+      adomain: [advertiser-b.example]
