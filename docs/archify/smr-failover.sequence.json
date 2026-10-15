@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Fenced Writer Switchover (US to EU)",
+    "output": "smr-failover.html",
+    "viewBox": [1080, 688],
+    "column_fit": "spread",
+    "animation": "trace",
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    { "id": "op", "type": "external", "label": "Operator", "sublabel": "runbook / curl" },
+    { "id": "app", "type": "backend", "label": "app-eu", "sublabel": "failover orchestrator" },
+    { "id": "us", "type": "database", "label": "postgres-us", "sublabel": "old writer, fenced" },
+    { "id": "eu", "type": "database", "label": "postgres-eu", "sublabel": "promoted writer" }
+  ],
+  "segments": [
+    { "from": 150, "to": 215, "label": "Fence" },
+    { "from": 225, "to": 375, "label": "Promote" },
+    { "from": 385, "to": 545, "label": "Verify" }
+  ],
+  "messages": [
+    { "id": "fence", "from": "op", "to": "us", "y": 170, "label": "set_writer_mode(false)", "variant": "emphasis" },
+    { "id": "fenced", "from": "us", "to": "op", "y": 200, "label": "old writer rejects writes", "variant": "return" },
+    { "id": "activate", "from": "op", "to": "app", "y": 245, "label": "POST /admin/failover-activate", "variant": "default" },
+    { "id": "topo", "from": "app", "to": "us", "y": 275, "label": "read authoritative topology", "variant": "dashed" },
+    { "id": "promote", "from": "app", "to": "eu", "y": 305, "label": "enable writer mode", "variant": "emphasis" },
+    { "id": "writer-ok", "from": "eu", "to": "app", "y": 335, "label": "isLocalWriter = true", "variant": "return" },
+    { "id": "activated", "from": "app", "to": "op", "y": 365, "label": "200 active, writes to postgres-eu", "variant": "return" },
+    { "id": "write", "from": "op", "to": "app", "y": 405, "label": "POST /api/products (EU)", "variant": "default" },
+    { "id": "insert", "from": "app", "to": "eu", "y": 435, "label": "INSERT product (writer)", "variant": "emphasis" },
+    { "id": "commit", "from": "eu", "to": "app", "y": 465, "label": "commit", "variant": "return" },
+    { "id": "stale", "from": "app", "to": "us", "y": 500, "label": "stale writer: fence trigger rejects", "variant": "dashed" },
+    { "id": "created", "from": "app", "to": "op", "y": 530, "label": "201 Created", "variant": "return" }
+  ],
+  "activations": [
+    { "participant": "app", "from": 240, "to": 370, "type": "backend" },
+    { "participant": "eu", "from": 300, "to": 340, "type": "database" },
+    { "participant": "eu", "from": 430, "to": 470, "type": "database" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Promotion Gate",
+      "items": [
+        "Promotion is refused while authoritative topology still names US as writer",
+        "Unfenced promotion needs the explicit unsafe opt-in flag",
+        "Promotion completes only after the DB writer and traffic-route checks pass"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Split-Brain Guard",
+      "items": [
+        "US is fenced before EU takes writes",
+        "A product-table trigger rejects writes on any non-writer database",
+        "Both compute regions route future writes to postgres-eu after switchover"
+      ]
+    }
+  ]
+}
