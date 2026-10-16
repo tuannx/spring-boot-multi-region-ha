@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Run arcade-agent
         # Keep the action and the released Python package on the latest v0.4.1 line.
-        uses: arcade-agent/arcade-agent/actions/analyze@v0.4.1
+        uses: arcade-agent/arcade-agent/actions/analyze@v0.4.2
         with:
           arcade-agent-version: "0.4.1"
           source-path: app/src/main/java
