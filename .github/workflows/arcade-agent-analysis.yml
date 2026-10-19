@@ -18,13 +18,14 @@ jobs:
 
     steps:
       - name: Run arcade-agent
-        # Keep the action and the released Python package on the latest v0.4.1 line.
+        # Keep the action and the released Python package on the latest v0.4.2 line.
         uses: arcade-agent/arcade-agent/actions/analyze@v0.4.2
         with:
-          arcade-agent-version: "0.4.1"
+          arcade-agent-version: "0.4.2"
           source-path: app/src/main/java
           language: java
           repo-name: spring-boot-multi-region-ha
           primary-algorithm: pkg
           run-secondary-analyses: "true"
           wca-num-clusters: "4"
+          post-pr-comment: "false"
