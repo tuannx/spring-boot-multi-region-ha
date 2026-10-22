@@ -324,6 +324,8 @@ runs:
         )
         self.assertIn("| RTO (s) | 9.000 | — | n/a |", comment)
         self.assertIn("No main baseline", comment)
+        self.assertIn("nightly failover drill on main", comment)
+        self.assertNotIn("weekly", comment)
 
     def test_report_records_run_count_and_config_hash(self) -> None:
         config = load_config(Path(__file__).resolve().parents[2] / "config" / "failover-drill.json")

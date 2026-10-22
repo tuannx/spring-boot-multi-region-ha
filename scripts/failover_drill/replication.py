@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import re
 import time
 
 from failover_drill.stack import ComposeStack, StackError
+
+_HOSTNAME = re.compile(r"[a-z0-9][a-z0-9.-]*")
 
 PRIMARY = "multiregion-us"
 SECONDARY = "multiregion-eu"
@@ -58,17 +61,20 @@ def reset_subscription(stack: ComposeStack) -> None:
     )
 
 
-def create_subscription(stack: ComposeStack) -> None:
-    stack.psql(PRIMARY, "CREATE PUBLICATION drill_products FOR TABLE products;")
-    stack.psql(
-        SECONDARY,
-        """
-        CREATE SUBSCRIPTION drill_products
-          CONNECTION 'host=postgres-us port=5432 dbname=appdb user=appuser password=apppass'
-          PUBLICATION drill_products
-          WITH (copy_data = true, create_slot = true, enabled = true, slot_name = drill_products);
-        """,
+def subscription_sql(host: str) -> str:
+    if _HOSTNAME.fullmatch(host) is None:
+        raise ValueError(f"replication host {host!r} is not a DNS name")
+    return (
+        "CREATE SUBSCRIPTION drill_products\n"
+        f"  CONNECTION 'host={host} port=5432 dbname=appdb user=appuser password=apppass'\n"
+        "  PUBLICATION drill_products\n"
+        "  WITH (copy_data = true, create_slot = true, enabled = true, slot_name = drill_products);\n"
     )
+
+
+def create_subscription(stack: ComposeStack, host: str = "postgres-us") -> None:
+    stack.psql(PRIMARY, "CREATE PUBLICATION drill_products FOR TABLE products;")
+    stack.psql(SECONDARY, subscription_sql(host))
 
 
 def wait_until_caught_up(stack: ComposeStack, run_index: int, timeout_seconds: float) -> str:

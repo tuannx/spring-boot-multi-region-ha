@@ -10,6 +10,7 @@ from failover_drill.metrics import evaluate_gate, median_metric, metric_delta
 MEASUREMENT_SCOPE = "local mock (containers + fault injection), not real Aurora Global"
 ARCHITECTURE_DIFF_MARKER = "<!-- architecture-engineer-diff -->"
 ARCHITECTURE_DIFF_UNAVAILABLE = "AE diff unavailable"
+NIGHTLY_MEASUREMENT_SCOPE = "local mock (containers + Toxiproxy), not real Aurora Global"
 
 FIELD_MEANINGS: tuple[tuple[str, str], ...] = (
     (
@@ -162,7 +163,7 @@ def render_comment(report: dict) -> str:
         lines.append("")
         lines.append(
             "No main baseline artifact was available, so regression deltas were not applied. "
-            "The baseline is kept for 90 days and refreshed by the weekly drill on main. "
+            "The baseline is kept for 90 days and refreshed by the nightly failover drill on main. "
             "Absolute RTO, RPO, lost-write, and duplicate-write limits still apply."
         )
     lines.append("")
