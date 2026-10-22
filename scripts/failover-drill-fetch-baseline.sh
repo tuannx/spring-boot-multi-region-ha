@@ -24,19 +24,22 @@ if [[ -n "$HEAD_REPO" && "$HEAD_REPO" != "$REPO" ]]; then
   exit 0
 fi
 
-runs="$(gh run list --repo "$REPO" --workflow e2e.yml --branch main --limit 30 --json databaseId,headSha,conclusion 2>/dev/null || true)"
-if [[ -z "$runs" || "$runs" == "[]" ]]; then
-  echo "No main workflow runs were visible for a failover baseline."
-  exit 0
-fi
-
-DEST="$DEST" GITHUB_REPOSITORY="$REPO" python3 - "$runs" <<'PY'
+# Nightly publishes the baseline. e2e.yml remains for baselines stored before that.
+for workflow in failover-drill-nightly.yml e2e.yml; do
+  runs="$(gh run list --repo "$REPO" --workflow "$workflow" --branch main --limit 30 --json databaseId,headSha,conclusion 2>/dev/null || true)"
+  if [[ -z "$runs" || "$runs" == "[]" ]]; then
+    echo "No main runs of ${workflow} were visible for a failover baseline."
+    continue
+  fi
+  set +e
+  DEST="$DEST" GITHUB_REPOSITORY="$REPO" python3 - "$runs" "$workflow" <<'PY'
 import json
 import os
 import subprocess
 import sys
 
 runs = json.loads(sys.argv[1])
+workflow = sys.argv[2]
 repo = os.environ["GITHUB_REPOSITORY"]
 dest = os.environ["DEST"]
 for run in runs:
@@ -66,7 +69,15 @@ for run in runs:
     )
     report = os.path.join(dest, "drill-report.json")
     if downloaded.returncode == 0 and os.path.isfile(report):
-        print(f"Using failover baseline from main run {run_id} ({run.get('headSha', '')}).")
+        print(f"Using failover baseline from {workflow} main run {run_id} ({run.get('headSha', '')}).")
         raise SystemExit(0)
-print("No failover-drill-baseline artifact on recent main runs.")
+print(f"No failover-drill-baseline artifact on recent {workflow} main runs.")
+raise SystemExit(2)
 PY
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    exit 0
+  fi
+done
+echo "No failover-drill-baseline artifact on recent main runs."

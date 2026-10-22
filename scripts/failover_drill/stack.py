@@ -12,14 +12,17 @@ class StackError(RuntimeError):
 
 
 class ComposeStack:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, overlay: str | None = None):
         self.root = root
+        self.overlay = overlay
         self.compose_files = [
             "-f",
             "docker-compose.yml",
             "-f",
             "docker-compose.failover-drill.yml",
         ]
+        if overlay:
+            self.compose_files.extend(["-f", overlay])
 
     def ensure_images(self) -> bool:
         eu = "multiregion-app-eu:latest"
@@ -31,10 +34,7 @@ class ComposeStack:
         return True
 
     def up(self) -> None:
-        self._compose(
-            "up",
-            "-d",
-            "--remove-orphans",
+        services = [
             "otel-collector",
             "postgres-us",
             "postgres-eu",
@@ -42,7 +42,10 @@ class ComposeStack:
             "rabbitmq-eu",
             "app-us",
             "app-eu",
-        )
+        ]
+        if self.overlay:
+            services = ["toxiproxy", *services]
+        self._compose("up", "-d", "--remove-orphans", *services)
 
     def down(self) -> None:
         self._compose("down", "--volumes", "--remove-orphans", check=False)

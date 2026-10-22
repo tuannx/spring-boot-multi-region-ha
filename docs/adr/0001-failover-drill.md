@@ -1,8 +1,10 @@
 # ADR 0001: Failover drill in the application E2E workflow
 
+The Monday baseline refresh described below is replaced by [ADR 0002](0002-nightly-failover-drill.md). The pull-request drill in this record is unchanged.
+
 ## Decision
 
-Every pull request and every push to `main` runs a failover drill as the `failover-drill` job in `.github/workflows/e2e.yml`, after `test-and-acceptance`. The same workflow also runs on Monday at 06:00 UTC. The job loads the application images exported by that earlier job, runs `./scripts/failover-drill.sh`, uploads `drill-report.json`, and on a same-repository pull request updates one comment. A passing drill on `main`, including the weekly run and a manual run of `main`, is stored as the `failover-drill-baseline` artifact.
+Every pull request and every push to `main` runs a failover drill as the `failover-drill` job in `.github/workflows/e2e.yml`, after `test-and-acceptance`. The job loads the application images exported by that earlier job, runs `./scripts/failover-drill.sh`, uploads `drill-report.json`, and on a same-repository pull request updates one comment. The `failover-drill-baseline` artifact is published by the nightly workflow in ADR 0002, not by this job.
 
 ## How a run fails the primary
 
@@ -32,6 +34,6 @@ p99 is part of the comment table and has no absolute threshold. It is left out o
 
 Each regression metric also has an absolute floor, so a move off a zero baseline is not an automatic failure. `rto_seconds` has to increase by at least `rto_regression_min_delta_seconds` (1.0 seconds). `rpo_seconds` has to increase by at least `rpo_regression_min_delta_seconds` (0.5 seconds). `error_count` has to increase by at least `error_count_regression_min_delta` (2). A zero-baseline RTO of 0.9 seconds, an RPO of 0.4 seconds, or one extra error stays inside those floors. The same move at the floor fails. Exactly 20 percent still passes, because the ratio comparison is strictly greater-than. The ratio and the floor both have to be cleared.
 
-The baseline artifact is retained for 90 days. The Monday 06:00 UTC schedule uploads a new one after a passing drill so the comparison does not age out. That weekly run stays in this workflow and does not take the place of a future nightly drill (issue #98). When no unexpired baseline is available, the comment skips regression and the absolute RTO, RPO, lost-write, and duplicate-write limits still apply.
+The baseline artifact is retained for 90 days. ADR 0002 moved the refresh from the Monday 06:00 UTC schedule of this workflow onto a nightly workflow, so a pull request is not blocked by that run and the comparison does not age out. When no unexpired baseline is available, the comment skips regression and the absolute RTO, RPO, lost-write, and duplicate-write limits still apply.
 
 Fork pull requests run the drill and the absolute gates. They skip the sticky comment and the baseline download when the head repository is not this repository, because `GITHUB_TOKEN` is read-only there. A separate `workflow_run` that checks out pull-request code with a write token is out of scope; comments stay on same-repository pull requests. A same-repository pull request updates the comment whose body contains `<!-- failover-drill-report -->` instead of posting a new one. The comment ends with an empty `<!-- architecture-engineer-diff -->` section so a later architecture update can fill that marker without posting a second comment. The comment and the README label every measured number as a local mock of containers and fault injection, not real Aurora Global. `drill-report.json` records `commit_sha`, `run_count`, and `config_sha256`.

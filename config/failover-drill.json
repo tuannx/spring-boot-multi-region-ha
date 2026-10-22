@@ -10,6 +10,45 @@
   "stack_ready_timeout_seconds": 240,
   "replication_catchup_timeout_seconds": 90,
   "app_eu_url": "http://localhost:8081",
+  "toxiproxy": {
+    "image": "ghcr.io/shopify/toxiproxy:2.12.0",
+    "api_url": "http://127.0.0.1:8474",
+    "proxy_name": "cross-region-postgres-us",
+    "listen": "0.0.0.0:5432",
+    "upstream": "postgres-us.direct:5432"
+  },
+  "scenarios": [
+    {
+      "name": "primary-kill",
+      "profiles": ["pull-request", "nightly"],
+      "fault": "docker-kill-primary",
+      "replication_host": "postgres-us",
+      "compose_overlay": null,
+      "latency_ms": 0,
+      "jitter_ms": 0,
+      "toxicity": 1
+    },
+    {
+      "name": "network-partition",
+      "profiles": ["nightly"],
+      "fault": "toxiproxy-partition",
+      "replication_host": "postgres-us.proxy",
+      "compose_overlay": "docker-compose.failover-drill-extended.yml",
+      "latency_ms": 0,
+      "jitter_ms": 0,
+      "toxicity": 1
+    },
+    {
+      "name": "slow-db",
+      "profiles": ["nightly"],
+      "fault": "docker-kill-primary",
+      "replication_host": "postgres-us",
+      "compose_overlay": "docker-compose.failover-drill-extended.yml",
+      "latency_ms": 200,
+      "jitter_ms": 0,
+      "toxicity": 1
+    }
+  ],
   "gates": {
     "rto_seconds_max": 60,
     "rpo_seconds_max": 2,
