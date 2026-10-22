@@ -198,6 +198,42 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
+      - name: Fill the architecture diff slot
+        id: architecture-diff
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: tuannx/architecture-engineer/.github/actions/failover-comment-diff@68da8d9ec6c7816813e59e29507ba8986d890ee9
+        with:
+          trace: reports/failover-drill/otlp-trace.json
+          report: reports/failover-drill/drill-report.json
+          comment: reports/failover-drill/comment.md
+
+      - name: Check out architecture-engineer
+        id: architecture-engineer-checkout
+        if: >-
+          always() &&
+          github.event_name == 'pull_request' &&
+          steps.architecture-diff.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: tuannx/architecture-engineer
+          ref: 68da8d9ec6c7816813e59e29507ba8986d890ee9
+          path: architecture-engineer
+          persist-credentials: false
+
+      - name: Run the architecture-engineer CLI and splice script
+        if: >-
+          always() &&
+          github.event_name == 'pull_request' &&
+          steps.architecture-engineer-checkout.outcome == 'success'
+        continue-on-error: true
+        uses: ./architecture-engineer/.github/actions/failover-comment-diff
+        with:
+          trace: reports/failover-drill/otlp-trace.json
+          report: reports/failover-drill/drill-report.json
+          comment: reports/failover-drill/comment.md
+
       - name: Post the sticky drill comment
         if: always() && github.event_name == 'pull_request'
         env:
