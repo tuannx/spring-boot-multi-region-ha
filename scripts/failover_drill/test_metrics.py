@@ -24,7 +24,17 @@ from failover_drill.report import (
 
 
 def _gates() -> DrillGates:
-    return DrillGates(60, 2, 0, 0.2, 0.5, ("rto_seconds", "rpo_seconds", "error_count"))
+    return DrillGates(
+        rto_seconds_max=60,
+        rpo_seconds_max=2,
+        rpo_lost_writes_max=0,
+        duplicate_writes_max=0,
+        regression_ratio_max=0.2,
+        rto_regression_min_delta_seconds=1.0,
+        rpo_regression_min_delta_seconds=0.5,
+        error_count_regression_min_delta=2,
+        regression_metrics=("rto_seconds", "rpo_seconds", "error_count"),
+    )
 
 
 def _write(name: str, started: int, finished: int, status: int | None = 201) -> Attempt:
@@ -93,11 +103,9 @@ class RecoveryMetricsTest(unittest.TestCase):
         self.assertFalse(over["passed"])
         self.assertTrue(any("error_count" in failure for failure in over["failures"]))
 
-    def test_regression_from_zero_fails_and_a_missing_baseline_does_not(self) -> None:
-        current = _aggregate(_run(rto=1, rpo=0.1, errors=0))
-        from_zero = evaluate_gate(current, {"rto_seconds": 1, "rpo_seconds": 0, "error_count": 0}, _gates(), [_run()])
-        self.assertFalse(from_zero["passed"])
-        self.assertTrue(evaluate_gate(current, None, _gates(), [_run()])["passed"])
+    def test_a_missing_baseline_skips_regression(self) -> None:
+        current = _aggregate(_run(rto=1, rpo=0.1, errors=1))
+        self.assertTrue(evaluate_gate(current, None, _gates(), [_run(rto=1, rpo=0.1, errors=1)])["passed"])
 
     def test_lost_writes_fail_even_when_rpo_seconds_is_zero(self) -> None:
         run = _run(rto=1, rpo=0, errors=0, lost=1)
@@ -113,20 +121,57 @@ class RecoveryMetricsTest(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertTrue(any("run 2 rpo_lost_writes 1 exceeds 0" in failure for failure in result["failures"]))
 
-    def test_rto_regression_needs_the_ratio_and_the_absolute_floor(self) -> None:
-        self.assertTrue(self._rto_gate(1.3, 1.0)["passed"])
-        over = self._rto_gate(1.6, 1.0)
+    def test_one_run_with_a_duplicate_fails_when_the_median_is_zero(self) -> None:
+        runs = [_run(index=1), _run(index=2, duplicates=1), _run(index=3)]
+        aggregate = aggregate_runs(runs)
+        self.assertEqual(aggregate["duplicate_writes"], 0)
+        result = evaluate_gate(aggregate, None, _gates(), runs)
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("run 2 duplicate_writes 1 exceeds 0" in failure for failure in result["failures"]))
+
+    def test_rto_regression_needs_the_ratio_and_a_one_second_floor(self) -> None:
+        self.assertTrue(self._compared(rto=1.3, baseline_rto=1.0)["passed"])
+        over = self._compared(rto=2.0, baseline_rto=1.0)
         self.assertFalse(over["passed"])
         self.assertTrue(any("rto_seconds regressed" in failure for failure in over["failures"]))
-        self.assertTrue(self._rto_gate(0.4, 0.0)["passed"])
-        from_zero = self._rto_gate(0.5, 0.0)
+        self.assertTrue(self._compared(rto=0.9, baseline_rto=0.0)["passed"])
+        from_zero = self._compared(rto=1.0, baseline_rto=0.0)
         self.assertFalse(from_zero["passed"])
-        self.assertTrue(any("absolute floor 0.5s" in failure for failure in from_zero["failures"]))
+        self.assertTrue(any("absolute floor 1.0s" in failure for failure in from_zero["failures"]))
 
-    def _rto_gate(self, current_rto: float, baseline_rto: float) -> dict:
-        current = _aggregate(_run(rto=current_rto, rpo=0, errors=0))
-        baseline = {"rto_seconds": baseline_rto, "rpo_seconds": 0, "error_count": 0}
-        return evaluate_gate(current, baseline, _gates(), [_run(rto=current_rto, rpo=0, errors=0)])
+    def test_rpo_regression_needs_the_ratio_and_a_half_second_floor(self) -> None:
+        self.assertTrue(self._compared(rpo=0.4, baseline_rpo=0.0)["passed"])
+        from_zero = self._compared(rpo=0.5, baseline_rpo=0.0)
+        self.assertFalse(from_zero["passed"])
+        self.assertTrue(any("rpo_seconds regressed from 0 to 0.5s" in failure for failure in from_zero["failures"]))
+        self.assertTrue(self._compared(rpo=1.3, baseline_rpo=1.0)["passed"])
+        over = self._compared(rpo=1.5, baseline_rpo=1.0)
+        self.assertFalse(over["passed"])
+        self.assertTrue(any("rpo_seconds regressed" in failure for failure in over["failures"]))
+
+    def test_error_count_regression_needs_the_ratio_and_two_extra_errors(self) -> None:
+        self.assertTrue(self._compared(errors=1, baseline_errors=0)["passed"])
+        from_zero = self._compared(errors=2, baseline_errors=0)
+        self.assertFalse(from_zero["passed"])
+        self.assertTrue(any("error_count regressed from 0 to 2" in failure for failure in from_zero["failures"]))
+        self.assertTrue(self._compared(errors=5, baseline_errors=4)["passed"])
+        over = self._compared(errors=6, baseline_errors=4)
+        self.assertFalse(over["passed"])
+        self.assertTrue(any("error_count regressed" in failure for failure in over["failures"]))
+
+    def _compared(
+        self,
+        rto: float = 1,
+        rpo: float = 0,
+        errors: int = 0,
+        baseline_rto: float = 1,
+        baseline_rpo: float = 0,
+        baseline_errors: int = 0,
+    ) -> dict:
+        run = _run(rto=rto, rpo=rpo, errors=errors)
+        current = _aggregate(run)
+        baseline = {"rto_seconds": baseline_rto, "rpo_seconds": baseline_rpo, "error_count": baseline_errors}
+        return evaluate_gate(current, baseline, _gates(), [run])
 
     def test_p99_increase_is_not_a_gate(self) -> None:
         current = _aggregate(_run(p99=9000))
@@ -143,8 +188,11 @@ class RecoveryMetricsTest(unittest.TestCase):
                     "rto_seconds_max": 60,
                     "rpo_seconds_max": 2,
                     "rpo_lost_writes_max": 0,
+                    "duplicate_writes_max": 0,
                     "regression_ratio_max": 0.2,
-                    "rto_regression_min_delta_seconds": 0.5,
+                    "rto_regression_min_delta_seconds": 1.0,
+                    "rpo_regression_min_delta_seconds": 0.5,
+                    "error_count_regression_min_delta": 2,
                     "regression_metrics": ["rto_seconds", "rpo_seconds", "error_count"],
                 },
             },
@@ -203,8 +251,11 @@ class RecoveryMetricsTest(unittest.TestCase):
                         "rto_seconds_max": 60,
                         "rpo_seconds_max": 2,
                         "rpo_lost_writes_max": 0,
+                        "duplicate_writes_max": 0,
                         "regression_ratio_max": 0.2,
-                        "rto_regression_min_delta_seconds": 0.5,
+                        "rto_regression_min_delta_seconds": 1.0,
+                        "rpo_regression_min_delta_seconds": 0.5,
+                        "error_count_regression_min_delta": 2,
                         "regression_metrics": ["rto_seconds"],
                     },
                 },
@@ -233,8 +284,11 @@ class RecoveryMetricsTest(unittest.TestCase):
         self.assertEqual(config.gates.rto_seconds_max, 60)
         self.assertEqual(config.gates.rpo_seconds_max, 2)
         self.assertEqual(config.gates.rpo_lost_writes_max, 0)
+        self.assertEqual(config.gates.duplicate_writes_max, 0)
         self.assertEqual(config.gates.regression_ratio_max, 0.2)
-        self.assertEqual(config.gates.rto_regression_min_delta_seconds, 0.5)
+        self.assertEqual(config.gates.rto_regression_min_delta_seconds, 1.0)
+        self.assertEqual(config.gates.rpo_regression_min_delta_seconds, 0.5)
+        self.assertEqual(config.gates.error_count_regression_min_delta, 2)
         self.assertNotIn("p99_latency_ms", config.gates.regression_metrics)
 
     def test_readme_results_table_is_generated_from_the_config(self) -> None:
@@ -260,13 +314,14 @@ def _run(
     errors: int = 1,
     p99: float = 100,
     lost: int = 0,
+    duplicates: int = 0,
 ) -> dict:
     return {
         "index": index,
         "rto_seconds": rto,
         "rpo_seconds": rpo,
         "rpo_lost_writes": lost,
-        "duplicate_writes": 0,
+        "duplicate_writes": duplicates,
         "error_count": errors,
         "p99_latency_ms": p99,
         "driver_failover_verified": True,

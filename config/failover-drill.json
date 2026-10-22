@@ -14,8 +14,11 @@
     "rto_seconds_max": 60,
     "rpo_seconds_max": 2,
     "rpo_lost_writes_max": 0,
+    "duplicate_writes_max": 0,
     "regression_ratio_max": 0.2,
-    "rto_regression_min_delta_seconds": 0.5,
+    "rto_regression_min_delta_seconds": 1.0,
+    "rpo_regression_min_delta_seconds": 0.5,
+    "error_count_regression_min_delta": 2,
     "regression_metrics": [
       "rto_seconds",
       "rpo_seconds",

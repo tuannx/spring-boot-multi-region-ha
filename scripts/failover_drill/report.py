@@ -73,7 +73,7 @@ def build_report(
                 aggregate.get(name) if isinstance(aggregate.get(name), (int, float)) else None,
                 baseline_aggregate.get(name) if isinstance(baseline_aggregate.get(name), (int, float)) else None,
                 config.gates.regression_ratio_max,
-                config.gates.rto_regression_min_delta_seconds,
+                config.gates.regression_min_deltas(),
             )
     gate = evaluate_gate(aggregate, baseline_aggregate if isinstance(baseline_aggregate, dict) else None, config.gates, runs)
     return {
@@ -161,7 +161,7 @@ def render_comment(report: dict) -> str:
         lines.append(
             "No main baseline artifact was available, so regression deltas were not applied. "
             "The baseline is kept for 90 days and refreshed by the weekly drill on main. "
-            "Absolute RTO, RPO, and lost-write limits still apply."
+            "Absolute RTO, RPO, lost-write, and duplicate-write limits still apply."
         )
     lines.append("")
     lines.append(
@@ -221,10 +221,15 @@ def _threshold_sentence(gates: dict) -> str:
         f"RTO ≤ {gates.get('rto_seconds_max')}s, "
         f"RPO ≤ {gates.get('rpo_seconds_max')}s, "
         f"rpo_lost_writes ≤ {gates.get('rpo_lost_writes_max')}, "
+        f"duplicate_writes ≤ {gates.get('duplicate_writes_max')}, "
         f"regression ≤ {float(gates.get('regression_ratio_max', 0)) * 100:.0f}% "
         f"on {metrics}. "
         "An RTO regression also has to increase by at least "
-        f"{gates.get('rto_regression_min_delta_seconds')}s."
+        f"{gates.get('rto_regression_min_delta_seconds')}s, "
+        "an RPO regression by at least "
+        f"{gates.get('rpo_regression_min_delta_seconds')}s, "
+        "and an error-count regression by at least "
+        f"{gates.get('error_count_regression_min_delta')}."
     )
 
 

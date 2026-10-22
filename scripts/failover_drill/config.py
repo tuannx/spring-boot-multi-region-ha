@@ -21,9 +21,19 @@ class DrillGates:
     rto_seconds_max: float
     rpo_seconds_max: float
     rpo_lost_writes_max: int
+    duplicate_writes_max: int
     regression_ratio_max: float
     rto_regression_min_delta_seconds: float
+    rpo_regression_min_delta_seconds: float
+    error_count_regression_min_delta: int
     regression_metrics: tuple[str, ...]
+
+    def regression_min_deltas(self) -> dict[str, float]:
+        return {
+            "rto_seconds": self.rto_regression_min_delta_seconds,
+            "rpo_seconds": self.rpo_regression_min_delta_seconds,
+            "error_count": float(self.error_count_regression_min_delta),
+        }
 
 
 @dataclass(frozen=True)
@@ -74,8 +84,11 @@ def load_config(path: Path) -> DrillConfig:
         "rto_seconds_max",
         "rpo_seconds_max",
         "rpo_lost_writes_max",
+        "duplicate_writes_max",
         "regression_ratio_max",
         "rto_regression_min_delta_seconds",
+        "rpo_regression_min_delta_seconds",
+        "error_count_regression_min_delta",
         "regression_metrics",
     }
     unknown_gates = set(gates_payload) - gate_keys
@@ -100,8 +113,11 @@ def load_config(path: Path) -> DrillConfig:
         rto_seconds_max=float(gates_payload["rto_seconds_max"]),
         rpo_seconds_max=float(gates_payload["rpo_seconds_max"]),
         rpo_lost_writes_max=int(gates_payload["rpo_lost_writes_max"]),
+        duplicate_writes_max=int(gates_payload["duplicate_writes_max"]),
         regression_ratio_max=float(gates_payload["regression_ratio_max"]),
         rto_regression_min_delta_seconds=float(gates_payload["rto_regression_min_delta_seconds"]),
+        rpo_regression_min_delta_seconds=float(gates_payload["rpo_regression_min_delta_seconds"]),
+        error_count_regression_min_delta=int(gates_payload["error_count_regression_min_delta"]),
         regression_metrics=regression_metrics,
     )
     return DrillConfig(
