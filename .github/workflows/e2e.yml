@@ -6,6 +6,8 @@ on:
     branches:
       - main
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -14,13 +16,17 @@ concurrency:
 jobs:
   test-and-acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     permissions:
       contents: read
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1
+
+      - name: Test failover drill calculations
+        working-directory: scripts
+        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces
 
       - name: Set up Java 21
         uses: actions/setup-java@v6.0.1
@@ -82,6 +88,134 @@ jobs:
           name: acceptance-evidence
           path: reports/queue-takeover/
           if-no-files-found: ignore
+
+      - name: Export application images for the failover drill
+        if: success()
+        run: |
+          mkdir -p reports/stack-images
+          docker save multiregion-app-us:latest multiregion-app-eu:latest \
+            | gzip -1 > reports/stack-images/images.tar.gz
+          ls -lh reports/stack-images/images.tar.gz
+
+      - name: Upload application images
+        if: success()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: stack-images
+          path: reports/stack-images/images.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+
+  failover-drill:
+    needs: test-and-acceptance
+    if: needs.test-and-acceptance.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Test failover drill calculations
+        working-directory: scripts
+        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces
+
+      - name: Download application images
+        continue-on-error: true
+        uses: actions/download-artifact@v7.0.0
+        with:
+          name: stack-images
+          path: reports/stack-images
+
+      - name: Fetch the main baseline
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILOVER_DRILL_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: ./scripts/failover-drill-fetch-baseline.sh
+
+      - name: Run the failover drill
+        id: drill
+        continue-on-error: true
+        env:
+          FAILOVER_DRILL_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FAILOVER_DRILL_COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: ./scripts/failover-drill.sh
+
+      - name: Upload the drill report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: failover-drill-report
+          path: reports/failover-drill/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload OTLP traces
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: otlp-trace.json
+          path: reports/failover-drill/otlp-trace.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Stage the main baseline
+        if: >-
+          always() &&
+          steps.drill.outcome == 'success' &&
+          (
+            github.event_name == 'schedule' ||
+            (
+              github.ref == 'refs/heads/main' &&
+              (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+            )
+          )
+        run: |
+          mkdir -p reports/failover-drill-baseline
+          cp reports/failover-drill/drill-report.json reports/failover-drill-baseline/drill-report.json
+
+      - name: Upload the main baseline
+        if: >-
+          always() &&
+          steps.drill.outcome == 'success' &&
+          (
+            github.event_name == 'schedule' ||
+            (
+              github.ref == 'refs/heads/main' &&
+              (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+            )
+          )
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: failover-drill-baseline
+          path: reports/failover-drill-baseline/drill-report.json
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Post the sticky drill comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILOVER_DRILL_PR_NUMBER: ${{ github.event.pull_request.number }}
+          FAILOVER_DRILL_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: ./scripts/failover-drill-comment.sh
+
+      - name: Publish the drill summary
+        if: always()
+        run: |
+          if [ -f reports/failover-drill/comment.md ]; then
+            cat reports/failover-drill/comment.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Enforce the failover drill gate
+        if: always()
+        run: test "${{ steps.drill.outcome }}" = "success"
 
   floci-acceptance:
     runs-on: ubuntu-latest

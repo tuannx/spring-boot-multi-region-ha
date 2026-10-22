@@ -1,0 +1,103 @@
+# Drill-only overlay. The default compose file stays two independent databases.
+# This file turns on logical replication and the JDBC settings the driver needs
+# to address the peer container by the SERVER_ID returned from aurora_replica_status().
+services:
+  postgres-us:
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_logical_replication_workers=4
+      - -c
+      - max_worker_processes=16
+    volumes:
+      - ./docker/failover-drill/010-logical-replication-hba.sh:/docker-entrypoint-initdb.d/010-logical-replication-hba.sh:ro
+
+  postgres-eu:
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_logical_replication_workers=4
+      - -c
+      - max_worker_processes=16
+    volumes:
+      - ./docker/failover-drill/010-logical-replication-hba.sh:/docker-entrypoint-initdb.d/010-logical-replication-hba.sh:ro
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0
+    container_name: multiregion-otel-collector
+    user: "0:0"
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./docker/failover-drill/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - otel-traces:/traces
+    networks:
+      - multiregion-net
+
+  app-us:
+    environment:
+      CLUSTER_INSTANCE_PATTERN: "?:5432"
+      WRAPPER_DIALECT: aurora-pg
+      READ_FAILOVER_MODE: strict-reader
+      JDBC_CLUSTER_ID_FROM_POOL: "true"
+      JAVA_OPTS: "-javaagent:/app/opentelemetry-javaagent.jar"
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: multiregion-app-us
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=failover-drill,service.namespace=multiregion
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_PROPAGATORS: tracecontext
+      OTEL_BSP_SCHEDULE_DELAY: "200"
+    depends_on:
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:$${SERVER_PORT:-8080}/actuator/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      start_period: 180s
+      retries: 12
+
+  app-eu:
+    environment:
+      CLUSTER_INSTANCE_PATTERN: "?:5432"
+      WRAPPER_DIALECT: aurora-pg
+      READ_FAILOVER_MODE: strict-reader
+      JDBC_CLUSTER_ID_FROM_POOL: "true"
+      JAVA_OPTS: "-javaagent:/app/opentelemetry-javaagent.jar"
+      OTEL_SDK_DISABLED: "false"
+      OTEL_SERVICE_NAME: multiregion-app-eu
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=failover-drill,service.namespace=multiregion
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_PROPAGATORS: tracecontext
+      OTEL_BSP_SCHEDULE_DELAY: "200"
+    depends_on:
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:$${SERVER_PORT:-8080}/actuator/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      start_period: 180s
+      retries: 12
+
+volumes:
+  otel-traces:

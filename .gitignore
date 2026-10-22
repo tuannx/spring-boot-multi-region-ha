@@ -77,6 +77,9 @@ test-output/
 reports/queue-takeover/
 reports/floci/
 reports/demo/
+reports/failover-drill/
+reports/failover-drill-baseline/
+reports/stack-images/
 *.test.js
 *.test.ts
 __pycache__/

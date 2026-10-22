@@ -44,6 +44,10 @@ class MultiRegionConfigTest {
         assertThat(config.failoverFailureThreshold()).isEqualTo(5);
         assertThat(config.allowUnfencedPromotion()).isFalse();
         assertThat(config.isSecondary()).isTrue();
+        assertThat(config.clusterInstancePattern()).isEqualTo("postgres-?:5432");
+        assertThat(config.wrapperDialect()).isEqualTo("pg");
+        assertThat(config.readFailoverMode()).isEmpty();
+        assertThat(config.clusterIdFromPoolName()).isFalse();
     }
 
     @Test
@@ -81,12 +85,20 @@ class MultiRegionConfigTest {
                         .withProperty("AWS_REGION", "eu-west-1")
                         .withProperty("ACTIVE_WRITER_DB_HOST", "writer.example")
                         .withProperty("ACTIVE_WRITER_DB_PORT", "6432")
-                        .withProperty("FAILOVER_ALLOW_UNFENCED_PROMOTION", "true"));
+                        .withProperty("FAILOVER_ALLOW_UNFENCED_PROMOTION", "true")
+                        .withProperty("WRAPPER_DIALECT", "aurora-pg")
+                        .withProperty("READ_FAILOVER_MODE", "strict-reader")
+                        .withProperty("JDBC_CLUSTER_ID_FROM_POOL", "true")
+                        .withProperty("CLUSTER_INSTANCE_PATTERN", "?:5432"));
 
         assertThat(config.dbPass()).isEqualTo("runtime-pass");
         assertThat(config.awsRegion()).isEqualTo("eu-west-1");
         assertThat(config.activeWriterDbHost()).isEqualTo("writer.example");
         assertThat(config.activeWriterDbPort()).isEqualTo(6432);
         assertThat(config.allowUnfencedPromotion()).isTrue();
+        assertThat(config.wrapperDialect()).isEqualTo("aurora-pg");
+        assertThat(config.readFailoverMode()).isEqualTo("strict-reader");
+        assertThat(config.clusterIdFromPoolName()).isTrue();
+        assertThat(config.clusterInstancePattern()).isEqualTo("?:5432");
     }
 }
