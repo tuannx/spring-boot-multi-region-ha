@@ -181,6 +181,8 @@ class WorkflowContractTest(unittest.TestCase):
         self.assertIn('cron: "0 6 * * *"', nightly)
         self.assertIn("workflow_dispatch:", nightly)
         self.assertNotIn("pull_request:", nightly)
+        self.assertNotIn("\n  push:", nightly)
+        self.assertNotIn("cursor/nightly-failover-drill-44ce", nightly)
         self.assertEqual(set(re.findall(r"runs-on:\s*(\S+)", nightly)), {"ubuntu-latest"})
         for banned in ("self-hosted", "macos-", "windows-", "ubuntu-latest-", "gpu"):
             self.assertNotIn(banned, nightly)
