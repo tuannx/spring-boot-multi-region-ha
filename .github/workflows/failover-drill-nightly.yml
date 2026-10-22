@@ -4,24 +4,14 @@ on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch:
-  push:
-    branches:
-      - cursor/nightly-failover-drill-44ce
 
 concurrency:
   group: nightly-failover-drill-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  register:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Register the workflow for workflow_dispatch
-        run: echo "Nightly workflow is visible to workflow_dispatch on this branch."
-
   drill:
-    if: ${{ github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
