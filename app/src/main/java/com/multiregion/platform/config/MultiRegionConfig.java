@@ -100,6 +100,18 @@ public record MultiRegionConfig(PklApplicationConfig pkl, Environment environmen
                 pkl.isFAILOVER_ALLOW_UNFENCED_PROMOTION());
     }
 
+    public String wrapperDialect() {
+        return stringProperty("WRAPPER_DIALECT", "pg");
+    }
+
+    public String readFailoverMode() {
+        return stringProperty("READ_FAILOVER_MODE", "");
+    }
+
+    public boolean clusterIdFromPoolName() {
+        return environment.getProperty("JDBC_CLUSTER_ID_FROM_POOL", Boolean.class, false);
+    }
+
     public boolean isPrimary() {
         return "primary".equalsIgnoreCase(regionRole());
     }

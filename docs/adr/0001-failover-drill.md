@@ -1,0 +1,31 @@
+# ADR 0001: Failover drill in the application E2E workflow
+
+## Decision
+
+Every pull request and every push to `main` runs a failover drill as the `failover-drill` job in `.github/workflows/e2e.yml`, after `test-and-acceptance`. The job loads the application images exported by that earlier job, runs `./scripts/failover-drill.sh`, uploads `drill-report.json`, and on a pull request updates one comment. A passing drill on `main` is also stored as the `failover-drill-baseline` artifact.
+
+## How a run fails the primary
+
+The workload writes and reads through `app-eu`. Writes use the AWS JDBC `failover2` write pool, which starts on `postgres-us`. At the end of warmup the drill runs `docker kill` on `multiregion-us`, disables the temporary logical subscription, advances `products_id_seq`, and calls `pg_catalog.set_writer_mode(true)` on `postgres-eu`. Requests that start after that promotion must be inserted by the driver on `postgres-eu`. The application failover orchestrator keeps `FAILOVER_ALLOW_UNFENCED_PROMOTION=false`, so this path does not call `/admin/failover-activate` and does not switch the process onto `PromotedWriterPool`.
+
+RTO is the time from the kill to the first of those recovered writes. RPO is the age, at the kill, of the oldest acknowledged write that logical replication had not applied to `postgres-eu`. Lost names and extra rows are counted separately. Switchover errors and p99 use the write attempts that overlap the kill-to-recovery window. The published value of each metric is the median of three runs. A run that does not recover fails the gate on its own.
+
+## Trade-offs
+
+The drill is a later job in the existing workflow, with `needs: test-and-acceptance`, so it measures the images acceptance already built and it does not start when acceptance fails. Transferring the images costs upload time. If the artifact is missing, the drill builds `app-eu` and tags it as `app-us`; the image build argument does not change the runtime, and the regional profile is an environment variable.
+
+The default lab does not replicate. Two independent databases would report every pre-failure acknowledgement as lost, and the RPO gate would never pass. The drill compose overlay enables `wal_level=logical` and a `products` publication for the duration of the command. The default `docker compose up` path is unchanged.
+
+The driver can follow `SERVER_ID` only when `clusterInstanceHostPattern` substitutes that id into a DNS name. The stock pattern `postgres-?:5432` produces `postgres-postgres-eu`. The stock `wrapperDialect=pg` also selects the connection-string host list, which has no peer. The drill sets `WRAPPER_DIALECT=aurora-pg`, `CLUSTER_INSTANCE_PATTERN=?:5432`, `READ_FAILOVER_MODE=strict-reader`, and `JDBC_CLUSTER_ID_FROM_POOL=true` on the two application services. Those variables are read by the existing configuration adapter and default to the previous behavior when they are unset, so acceptance stays on `wrapperDialect=pg`.
+
+`aurora-pg` queries `aurora_replica_status()` while opening a failover connection. Flyway creates that function, and it uses the plugin-disabled local admin pool, so the admin, probe, and promoted-writer pools stay on `wrapperDialect=pg` and do not take a per-pool `clusterId`. Only pools with the `failover2,dev` plugin chain receive the drill dialect, read failover mode, and pool-scoped cluster id. The host pattern is still applied to every pool, as it was before this drill; without the failover plugin the driver does not use it to select a peer. Sharing one cluster id between the read and write pools would also let a strict-reader topology decision affect the writer.
+
+Traces are part of the drill, not of the default lab. The image already contains the OpenTelemetry Java agent and leaves `OTEL_SDK_DISABLED=true`. The drill overlay attaches the agent, points OTLP HTTP at an `otel-collector` service, and turns the AOT cache off for that process: the cache was trained without the agent, and the agent has to rewrite Spring and JDBC classes. The collector is the contrib distribution pinned to `0.153.0`, with a file exporter that appends newline-delimited OTLP JSON to `/traces/otlp-trace.json`. No trace backend is required. The drill copies that file before it removes the stack. Each run stores `fault_injected_at` and `writer_switched_at` so a consumer can align spans with the kill and the writer-mode change. CI publishes the copy as an artifact named `otlp-trace.json`.
+
+The trace gate checks each run separately. A span counts as before the failure only when it ends before `fault_injected_at`, as during the switch only when it overlaps that timestamp and the writer-mode change, and as after only when it starts after `writer_switched_at`. One span that stays open across the whole window does not satisfy the check by itself.
+
+Killing the container is the injected fault. A proxy in front of the primary would add a steady-state hop and another process to keep healthy on a free runner. The control-plane promotion stays in the drill because the mock refuses writes until `writer_mode` is true and because logical replication does not advance sequences; Aurora performs both inside the promoted storage.
+
+p99 is part of the comment table and has no absolute threshold. It is left out of `gates.regression_metrics` because a switchover sample is a handful of in-flight requests and a 20 percent latency movement is noisy. Adding the key to `config/failover-drill.json` opts that metric into the relative check. The file is the only threshold list; the workflow does not repeat the numbers.
+
+Fork pull requests run the drill and the absolute gates. They skip the sticky comment and the baseline download when the head repository is not this repository, because `GITHUB_TOKEN` cannot perform those writes or reads safely there. A same-repository pull request updates the comment whose body contains `<!-- failover-drill-report -->` instead of posting a new one. With no baseline artifact yet, regression is not applied and the RTO and RPO limits still are.

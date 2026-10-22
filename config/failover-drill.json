@@ -1,0 +1,23 @@
+{
+  "iterations": 3,
+  "warmup_seconds": 5,
+  "recovery_timeout_seconds": 50,
+  "write_workers": 4,
+  "read_workers": 2,
+  "write_interval_ms": 200,
+  "read_interval_ms": 200,
+  "client_timeout_seconds": 35,
+  "stack_ready_timeout_seconds": 240,
+  "replication_catchup_timeout_seconds": 90,
+  "app_eu_url": "http://localhost:8081",
+  "gates": {
+    "rto_seconds_max": 60,
+    "rpo_seconds_max": 2,
+    "regression_ratio_max": 0.2,
+    "regression_metrics": [
+      "rto_seconds",
+      "rpo_seconds",
+      "error_count"
+    ]
+  }
+}

@@ -1,10 +1,13 @@
 package com.multiregion.platform.database;
 
+import com.multiregion.platform.config.MultiRegionConfig;
+import com.multiregion.platform.config.PklApplicationConfig;
 import com.multiregion.platform.routing.RoutingDataSource;
 import com.multiregion.platform.routing.RoutingDataSources;
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.datasource.LazyConnectionDataSourceProxy;
+import org.springframework.mock.env.MockEnvironment;
 
 import javax.sql.DataSource;
 import java.util.List;
@@ -139,6 +142,59 @@ class DatabaseConnectionsTest {
                 .containsEntry("promoted-writer", promotedWriter);
         assertThat(regional.getResolvedDefaultDataSource()).isSameAs(writer);
         assertThat(primary).isInstanceOf(LazyConnectionDataSourceProxy.class);
+    }
+
+    @Test
+    void drillEnvironmentSelectsAuroraDialectAndIsolatesPoolTopology() {
+        MultiRegionConfig config = new MultiRegionConfig(
+                new PklApplicationConfig(
+                        null, null, null, null, null, null, null,
+                        "appuser",
+                        "apppass",
+                        "appdb",
+                        "eu-west-1",
+                        "secondary",
+                        "us-east-1",
+                        "strict-writer",
+                        "home-reader-or-writer",
+                        "postgres-us:5432,postgres-eu:5432",
+                        "postgres-?:5432",
+                        "postgres-us",
+                        5432,
+                        "postgres-eu",
+                        5432,
+                        "postgres-eu",
+                        5432,
+                        3,
+                        false),
+                new MockEnvironment()
+                        .withProperty("WRAPPER_DIALECT", "aurora-pg")
+                        .withProperty("READ_FAILOVER_MODE", "strict-reader")
+                        .withProperty("JDBC_CLUSTER_ID_FROM_POOL", "true")
+                        .withProperty("CLUSTER_INSTANCE_PATTERN", "?:5432"));
+        DatabaseConnections connections = new DatabaseConnections(config);
+
+        try (HikariDataSource writer = (HikariDataSource) connections.writeDataSource();
+                HikariDataSource reader = (HikariDataSource) connections.readDataSource();
+                HikariDataSource admin = (HikariDataSource) connections.localAdminDataSource()) {
+            assertThat(writer.getDataSourceProperties())
+                    .containsEntry("wrapperDialect", "aurora-pg")
+                    .containsEntry("wrapperPlugins", "failover2,dev")
+                    .containsEntry("clusterInstanceHostPattern", "?:5432")
+                    .containsEntry("clusterId", "WritePool-eu-west-1")
+                    .doesNotContainKey("failoverMode");
+            assertThat(reader.getDataSourceProperties())
+                    .containsEntry("failoverMode", "strict-reader")
+                    .containsEntry("clusterId", "ReadPool-eu-west-1")
+                    .containsEntry("wrapperDialect", "aurora-pg");
+            assertThat(reader.isReadOnly()).isTrue();
+            assertThat(admin.getDataSourceProperties())
+                    .containsEntry("wrapperDialect", "pg")
+                    .containsEntry("wrapperPlugins", "")
+                    .containsEntry("clusterInstanceHostPattern", "?:5432")
+                    .doesNotContainKey("clusterId")
+                    .doesNotContainKey("failoverMode");
+        }
     }
 
     private DatabaseConnections config(

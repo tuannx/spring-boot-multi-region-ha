@@ -528,6 +528,37 @@ The local demo has no automatic failback. Run the acceptance command with
 disaster promotion still requires an external fencing/quorum decision before a
 previously unreachable primary is allowed to rejoin.
 
+## Failover drill
+
+The drill measures one primary-region failure against the AWS JDBC `failover2` write pool. It is the same command locally and in the Application E2E workflow:
+
+```bash
+./scripts/failover-drill.sh
+```
+
+Docker Compose v2 is the only runtime dependency. The command starts the lab, replicates `products` from `postgres-us` to `postgres-eu`, runs a steady write/read workload against the EU application, kills the primary database, promotes `postgres-eu` in the local control-plane mock, and waits for the driver to write there. It repeats that three times and publishes the median. The stack this command starts is removed, including volumes, when the command exits. `FAILOVER_DRILL_KEEP=1` leaves it up for inspection.
+
+The report is `reports/failover-drill/drill-report.json`. The command also prints the same Markdown table that CI posts on the pull request. That table is rendered from the JSON by the drill; the numbers are not maintained by hand. Each run records:
+
+| Field | Meaning |
+| --- | --- |
+| `rto_seconds` | Seconds from `docker kill` of `multiregion-us` to the first HTTP 201 whose request started after promotion and whose row is stored on `postgres-eu`. |
+| `rpo_seconds` | Seconds from the oldest acknowledged write that is missing on the new writer back to the kill. Zero when every acknowledged write is present. |
+| `lost_acknowledged_writes` | Count of acknowledged product names missing on the new writer. |
+| `duplicate_writes` | Extra `products` rows for the same drill name. Server retries during the switch can insert the same name twice. |
+| `error_count` | Write responses that are not HTTP 201 and overlap the window from the kill until the recovered write. |
+| `p99_latency_ms` | Nearest-rank p99 of write latencies in that window. It is reported and has no absolute pass/fail limit. |
+| `fault_injected_at` | UTC time immediately before `docker kill` of `multiregion-us`. |
+| `writer_switched_at` | UTC time when `postgres-eu` has accepted writer mode. |
+
+`aggregate` is the median of the three runs. A run that never writes again fails the gate rather than being dropped from the median. `commit_sha` and `config` are copied into the report so a later baseline comparison uses the same definitions.
+
+The same command writes `reports/failover-drill/otlp-trace.json`. That file is newline-delimited OTLP JSON from the OpenTelemetry Java agent in both application containers, collected by an OpenTelemetry Collector file exporter that exists only in the drill overlay. Span start and end times line up with `fault_injected_at` and `writer_switched_at` on each run: warmup spans end before the kill, in-flight spans overlap the switch, and the recovered write starts after it. CI uploads that file as the `otlp-trace.json` artifact. The drill fails when the file is missing or does not cover all three phases.
+
+CI runs the `failover-drill` job in [`.github/workflows/e2e.yml`](.github/workflows/e2e.yml) after `test-and-acceptance` and loads the application images that job already built. On a pull request it downloads the newest `failover-drill-baseline` artifact produced by a drill that passed on `main`, adds signed up/down deltas, and updates one sticky comment marked `<!-- failover-drill-report -->`. A fork pull request does not post that comment and does not read the baseline, because the workflow token cannot; the absolute limits still run and the report artifact remains. When no baseline exists yet, regression is skipped.
+
+The only thresholds are in [`config/failover-drill.json`](config/failover-drill.json): RTO greater than 60 seconds fails, RPO greater than 2 seconds fails, and a configured metric that is more than 20 percent worse than `main` fails. p99 is omitted from the regression list. Design trade-offs are in [docs/adr/0001-failover-drill.md](docs/adr/0001-failover-drill.md).
+
 ## API Reference
 
 ### Health Check

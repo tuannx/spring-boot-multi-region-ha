@@ -38,6 +38,9 @@ public class DatabaseConnections {
     private final String dbName;
     private final String failoverHomeRegion;
     private final String clusterInstancePattern;
+    private final String wrapperDialect;
+    private final String readFailoverMode;
+    private final boolean clusterIdFromPoolName;
 
     @Autowired
     public DatabaseConnections(MultiRegionConfig config) {
@@ -54,7 +57,10 @@ public class DatabaseConnections {
                 config.failoverWriterDbPort(),
                 config.dbName(),
                 config.failoverHomeRegion(),
-                config.clusterInstancePattern());
+                config.clusterInstancePattern(),
+                config.wrapperDialect(),
+                config.readFailoverMode(),
+                config.clusterIdFromPoolName());
     }
 
     DatabaseConnections(
@@ -82,7 +88,10 @@ public class DatabaseConnections {
                 failoverWriterDbPort,
                 dbName,
                 awsRegion,
-                "?:5432");
+                "?:5432",
+                "pg",
+                "",
+                false);
     }
 
     private DatabaseConnections(
@@ -98,7 +107,10 @@ public class DatabaseConnections {
             int failoverWriterDbPort,
             String dbName,
             String failoverHomeRegion,
-            String clusterInstancePattern) {
+            String clusterInstancePattern,
+            String wrapperDialect,
+            String readFailoverMode,
+            boolean clusterIdFromPoolName) {
         this.dbUser = dbUser;
         this.dbPass = dbPass;
         this.awsRegion = awsRegion;
@@ -112,6 +124,9 @@ public class DatabaseConnections {
         this.dbName = dbName;
         this.failoverHomeRegion = failoverHomeRegion;
         this.clusterInstancePattern = clusterInstancePattern;
+        this.wrapperDialect = wrapperDialect;
+        this.readFailoverMode = readFailoverMode == null ? "" : readFailoverMode;
+        this.clusterIdFromPoolName = clusterIdFromPoolName;
     }
 
     @Bean
@@ -179,12 +194,19 @@ public class DatabaseConnections {
         requireAdvancedJdbcUrl(url);
 
         Properties properties = new Properties();
+        boolean driverFailover = FAILOVER_PLUGINS.equals(plugins);
         properties.setProperty("user", dbUser);
         properties.setProperty("password", dbPass);
         properties.setProperty("wrapperPlugins", plugins);
-        properties.setProperty("wrapperDialect", "pg");
+        properties.setProperty("wrapperDialect", driverFailover ? wrapperDialect : "pg");
         properties.setProperty("failoverHomeRegion", failoverHomeRegion);
         properties.setProperty("clusterInstanceHostPattern", clusterInstancePattern);
+        if (driverFailover && clusterIdFromPoolName) {
+            properties.setProperty("clusterId", poolName);
+        }
+        if (driverFailover && readOnly && !readFailoverMode.isBlank()) {
+            properties.setProperty("failoverMode", readFailoverMode);
+        }
         properties.setProperty("clusterTopologyRefreshRateMs", "5000");
         properties.setProperty("failoverTimeoutMs", "5000");
         properties.setProperty("connectTimeout", "5");
