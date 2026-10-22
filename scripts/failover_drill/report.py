@@ -8,6 +8,8 @@ from failover_drill.config import DISPLAY_METRICS, METRIC_PLACES, DrillConfig
 from failover_drill.metrics import evaluate_gate, median_metric, metric_delta
 
 MEASUREMENT_SCOPE = "local mock (containers + fault injection), not real Aurora Global"
+ARCHITECTURE_DIFF_MARKER = "<!-- architecture-engineer-diff -->"
+ARCHITECTURE_DIFF_UNAVAILABLE = "AE diff unavailable"
 
 FIELD_MEANINGS: tuple[tuple[str, str], ...] = (
     (
@@ -172,9 +174,21 @@ def render_comment(report: dict) -> str:
     lines.append("")
     lines.append("## Architecture diff")
     lines.append("")
-    lines.append("<!-- architecture-engineer-diff -->")
+    lines.append(ARCHITECTURE_DIFF_MARKER)
     lines.append("")
     return "\n".join(lines)
+
+
+def record_unavailable_architecture_diff(comment: str) -> tuple[str, bool]:
+    start = comment.find(ARCHITECTURE_DIFF_MARKER)
+    if start < 0:
+        return comment, False
+    body = comment[start + len(ARCHITECTURE_DIFF_MARKER) :]
+    if body.strip():
+        return comment, False
+    prefix = comment[:start]
+    updated = f"{prefix}{ARCHITECTURE_DIFF_MARKER}\n{ARCHITECTURE_DIFF_UNAVAILABLE}\n"
+    return updated, True
 
 
 def render_readme_section(config: DrillConfig) -> str:
