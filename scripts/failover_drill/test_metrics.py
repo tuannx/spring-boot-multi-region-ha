@@ -14,7 +14,7 @@ from failover_drill.metrics import (
     switchover_error_count,
     switchover_p99_ms,
 )
-from failover_drill.report import aggregate_runs, render_comment
+from failover_drill.report import aggregate_runs, build_report, render_comment
 
 
 def _gates() -> DrillGates:
@@ -148,6 +148,8 @@ class RecoveryMetricsTest(unittest.TestCase):
         self.assertIn("https://example.test/run/1", comment)
         self.assertIn("otlp-trace.json", comment)
         self.assertIn("fault_injected_at", comment)
+        self.assertIn("<!-- architecture-engineer-diff -->", comment)
+        self.assertIn("## Architecture diff", comment)
         self.assertNotIn("hand-edited", comment)
 
     def test_missing_baseline_renders_an_empty_main_column(self) -> None:
@@ -173,6 +175,12 @@ class RecoveryMetricsTest(unittest.TestCase):
         )
         self.assertIn("| RTO (s) | 9.000 | — | n/a |", comment)
         self.assertIn("No main baseline", comment)
+
+    def test_report_records_run_count_and_config_hash(self) -> None:
+        config = load_config(Path(__file__).resolve().parents[2] / "config" / "failover-drill.json")
+        report = build_report(config, [_run(), _run(index=2), _run(index=3)], "abc", None, {}, None)
+        self.assertEqual(report["run_count"], 3)
+        self.assertEqual(len(report["config_sha256"]), 64)
 
     def test_repository_config_matches_the_required_limits(self) -> None:
         config = load_config(Path(__file__).resolve().parents[2] / "config" / "failover-drill.json")

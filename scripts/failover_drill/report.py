@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 
@@ -39,6 +40,8 @@ def build_report(
         "commit_sha": commit_sha,
         "workflow_run_url": workflow_run_url,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "run_count": len(runs),
+        "config_sha256": config_sha256(config),
         "config": config.to_dict(),
         "runtime": runtime,
         "runs": runs,
@@ -141,7 +144,16 @@ def render_comment(report: dict) -> str:
         "before, during, and after those timestamps."
     )
     lines.append("")
+    lines.append("## Architecture diff")
+    lines.append("")
+    lines.append("<!-- architecture-engineer-diff -->")
+    lines.append("")
     return "\n".join(lines)
+
+
+def config_sha256(config: DrillConfig) -> str:
+    payload = json.dumps(config.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _format_metric(value, places: int) -> str:

@@ -224,7 +224,11 @@ public class DatabaseConnections {
         dataSource.setIdleTimeout(30000);
         dataSource.setMaxLifetime(60000);
         dataSource.setInitializationFailTimeout(-1);
-        dataSource.setConnectionTestQuery("SELECT 1");
+        if (driverFailover) {
+            dataSource.setExceptionOverrideClassName("software.amazon.jdbc.util.HikariCPSQLException");
+        } else {
+            dataSource.setConnectionTestQuery("SELECT 1");
+        }
         dataSource.setReadOnly(readOnly);
         return dataSource;
     }

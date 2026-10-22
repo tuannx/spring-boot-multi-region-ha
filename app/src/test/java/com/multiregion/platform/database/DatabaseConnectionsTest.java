@@ -27,6 +27,8 @@ class DatabaseConnectionsTest {
                     .isEqualTo("jdbc:aws-wrapper:postgresql://eu-local-db:6543/appdb");
             assertThat(dataSource.getDataSourceProperties())
                     .containsEntry("wrapperPlugins", "");
+            assertThat(dataSource.getConnectionTestQuery()).isEqualTo("SELECT 1");
+            assertThat(dataSource.getExceptionOverrideClassName()).isNull();
             assertThat(dataSource.isReadOnly()).isFalse();
         }
     }
@@ -92,6 +94,9 @@ class DatabaseConnectionsTest {
                     .containsEntry("failoverTimeoutMs", "5000")
                     .containsEntry("connectTimeout", "5")
                     .containsEntry("socketTimeout", "5");
+            assertThat(dataSource.getExceptionOverrideClassName())
+                    .isEqualTo("software.amazon.jdbc.util.HikariCPSQLException");
+            assertThat(dataSource.getConnectionTestQuery()).isNull();
         }
     }
 
