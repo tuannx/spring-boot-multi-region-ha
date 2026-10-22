@@ -182,11 +182,32 @@ def direction(current: float, baseline: float) -> str:
     return "down"
 
 
-def metric_delta(name: str, current: float | None, baseline: float | None, ratio_max: float) -> dict | None:
+def metric_regressed(
+    name: str,
+    current: float,
+    baseline: float,
+    ratio_max: float,
+    rto_min_delta_seconds: float,
+) -> tuple[bool, float | None]:
+    regressed, ratio = regression(current, baseline, METRIC_PLACES[name], ratio_max)
+    if name == "rto_seconds" and regressed:
+        delta = _scaled(current, 3) - _scaled(baseline, 3)
+        if delta < _scaled(rto_min_delta_seconds, 3):
+            return False, ratio
+    return regressed, ratio
+
+
+def metric_delta(
+    name: str,
+    current: float | None,
+    baseline: float | None,
+    ratio_max: float,
+    rto_min_delta_seconds: float = 0.0,
+) -> dict | None:
     if current is None or baseline is None:
         return None
     places = METRIC_PLACES[name]
-    regressed, ratio = regression(current, baseline, places, ratio_max)
+    regressed, ratio = metric_regressed(name, current, baseline, ratio_max, rto_min_delta_seconds)
     absolute = current - baseline
     if places == 0:
         absolute_value: float | int = int(round(absolute))
@@ -216,6 +237,7 @@ def evaluate_gate(
 
     rto = aggregate.get("rto_seconds")
     rpo = aggregate.get("rpo_seconds")
+    lost = aggregate.get("rpo_lost_writes")
     if rto is None or rto > gates.rto_seconds_max:
         failures.append(
             f"RTO {rto}s exceeds {gates.rto_seconds_max}s"
@@ -228,6 +250,18 @@ def evaluate_gate(
             if rpo is not None
             else "RPO is missing"
         )
+    if lost is None or lost > gates.rpo_lost_writes_max:
+        failures.append(
+            f"rpo_lost_writes {lost} exceeds {gates.rpo_lost_writes_max}"
+            if lost is not None
+            else "rpo_lost_writes is missing"
+        )
+    for run in runs:
+        run_lost = run.get("rpo_lost_writes")
+        if isinstance(run_lost, (int, float)) and run_lost > gates.rpo_lost_writes_max:
+            failures.append(
+                f"run {run.get('index')} rpo_lost_writes {int(run_lost)} exceeds {gates.rpo_lost_writes_max}"
+            )
 
     if baseline_aggregate is not None:
         for name in gates.regression_metrics:
@@ -236,9 +270,28 @@ def evaluate_gate(
             if current is None or baseline is None:
                 failures.append(f"{name} cannot be compared with the main baseline")
                 continue
-            regressed, ratio = regression(current, baseline, METRIC_PLACES[name], gates.regression_ratio_max)
+            regressed, ratio = metric_regressed(
+                name,
+                current,
+                baseline,
+                gates.regression_ratio_max,
+                gates.rto_regression_min_delta_seconds,
+            )
             if regressed:
-                if ratio is None:
+                if name == "rto_seconds":
+                    absolute = round(float(current) - float(baseline), 3)
+                    if ratio is None:
+                        failures.append(
+                            f"rto_seconds regressed from 0 to {current}s "
+                            f"(absolute floor {gates.rto_regression_min_delta_seconds}s)"
+                        )
+                    else:
+                        failures.append(
+                            f"rto_seconds regressed {ratio * 100:.1f}% and {absolute:+.3f}s "
+                            f"(limits {gates.regression_ratio_max * 100:.0f}% and "
+                            f"+{gates.rto_regression_min_delta_seconds}s)"
+                        )
+                elif ratio is None:
                     failures.append(f"{name} regressed from 0 to {current}")
                 else:
                     failures.append(

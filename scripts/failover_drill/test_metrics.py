@@ -14,11 +14,17 @@ from failover_drill.metrics import (
     switchover_error_count,
     switchover_p99_ms,
 )
-from failover_drill.report import aggregate_runs, build_report, render_comment
+from failover_drill.report import (
+    MEASUREMENT_SCOPE,
+    aggregate_runs,
+    build_report,
+    render_comment,
+    render_readme_section,
+)
 
 
 def _gates() -> DrillGates:
-    return DrillGates(60, 2, 0.2, ("rto_seconds", "rpo_seconds", "error_count"))
+    return DrillGates(60, 2, 0, 0.2, 0.5, ("rto_seconds", "rpo_seconds", "error_count"))
 
 
 def _write(name: str, started: int, finished: int, status: int | None = 201) -> Attempt:
@@ -93,6 +99,35 @@ class RecoveryMetricsTest(unittest.TestCase):
         self.assertFalse(from_zero["passed"])
         self.assertTrue(evaluate_gate(current, None, _gates(), [_run()])["passed"])
 
+    def test_lost_writes_fail_even_when_rpo_seconds_is_zero(self) -> None:
+        run = _run(rto=1, rpo=0, errors=0, lost=1)
+        result = evaluate_gate(_aggregate(run), None, _gates(), [run, run, run])
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("rpo_lost_writes 1 exceeds 0" in failure for failure in result["failures"]))
+
+    def test_one_run_with_a_lost_write_fails_when_the_median_is_zero(self) -> None:
+        runs = [_run(index=1, lost=0), _run(index=2, lost=1), _run(index=3, lost=0)]
+        aggregate = aggregate_runs(runs)
+        self.assertEqual(aggregate["rpo_lost_writes"], 0)
+        result = evaluate_gate(aggregate, None, _gates(), runs)
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("run 2 rpo_lost_writes 1 exceeds 0" in failure for failure in result["failures"]))
+
+    def test_rto_regression_needs_the_ratio_and_the_absolute_floor(self) -> None:
+        self.assertTrue(self._rto_gate(1.3, 1.0)["passed"])
+        over = self._rto_gate(1.6, 1.0)
+        self.assertFalse(over["passed"])
+        self.assertTrue(any("rto_seconds regressed" in failure for failure in over["failures"]))
+        self.assertTrue(self._rto_gate(0.4, 0.0)["passed"])
+        from_zero = self._rto_gate(0.5, 0.0)
+        self.assertFalse(from_zero["passed"])
+        self.assertTrue(any("absolute floor 0.5s" in failure for failure in from_zero["failures"]))
+
+    def _rto_gate(self, current_rto: float, baseline_rto: float) -> dict:
+        current = _aggregate(_run(rto=current_rto, rpo=0, errors=0))
+        baseline = {"rto_seconds": baseline_rto, "rpo_seconds": 0, "error_count": 0}
+        return evaluate_gate(current, baseline, _gates(), [_run(rto=current_rto, rpo=0, errors=0)])
+
     def test_p99_increase_is_not_a_gate(self) -> None:
         current = _aggregate(_run(p99=9000))
         baseline = {"rto_seconds": 8, "rpo_seconds": 0, "error_count": 1, "p99_latency_ms": 10}
@@ -107,14 +142,16 @@ class RecoveryMetricsTest(unittest.TestCase):
                 "gates": {
                     "rto_seconds_max": 60,
                     "rpo_seconds_max": 2,
+                    "rpo_lost_writes_max": 0,
                     "regression_ratio_max": 0.2,
+                    "rto_regression_min_delta_seconds": 0.5,
                     "regression_metrics": ["rto_seconds", "rpo_seconds", "error_count"],
                 },
             },
             "aggregate": {
                 "rto_seconds": 8.102,
                 "rpo_seconds": 0.04,
-                "lost_acknowledged_writes": 1,
+                "rpo_lost_writes": 1,
                 "duplicate_writes": 2,
                 "error_count": 3,
                 "p99_latency_ms": 8102.5,
@@ -123,7 +160,7 @@ class RecoveryMetricsTest(unittest.TestCase):
                 "aggregate": {
                     "rto_seconds": 7,
                     "rpo_seconds": 0.02,
-                    "lost_acknowledged_writes": 0,
+                    "rpo_lost_writes": 0,
                     "duplicate_writes": 2,
                     "error_count": 3,
                     "p99_latency_ms": 100,
@@ -142,6 +179,8 @@ class RecoveryMetricsTest(unittest.TestCase):
         }
         comment = render_comment(report)
         self.assertIn("<!-- failover-drill-report -->", comment)
+        self.assertIn(MEASUREMENT_SCOPE, comment)
+        self.assertIn("| RPO lost writes | 1 | 0 |", comment)
         self.assertIn("8.102", comment)
         self.assertIn("8102.5", comment)
         self.assertIn("+1.102 (+15.7%) up", comment)
@@ -163,7 +202,9 @@ class RecoveryMetricsTest(unittest.TestCase):
                     "gates": {
                         "rto_seconds_max": 60,
                         "rpo_seconds_max": 2,
+                        "rpo_lost_writes_max": 0,
                         "regression_ratio_max": 0.2,
+                        "rto_regression_min_delta_seconds": 0.5,
                         "regression_metrics": ["rto_seconds"],
                     },
                 },
@@ -179,8 +220,11 @@ class RecoveryMetricsTest(unittest.TestCase):
     def test_report_records_run_count_and_config_hash(self) -> None:
         config = load_config(Path(__file__).resolve().parents[2] / "config" / "failover-drill.json")
         report = build_report(config, [_run(), _run(index=2), _run(index=3)], "abc", None, {}, None)
+        self.assertEqual(report["commit_sha"], "abc")
         self.assertEqual(report["run_count"], 3)
         self.assertEqual(len(report["config_sha256"]), 64)
+        self.assertIn("rpo_seconds", report["runs"][0])
+        self.assertIn("rpo_lost_writes", report["runs"][0])
 
     def test_repository_config_matches_the_required_limits(self) -> None:
         config = load_config(Path(__file__).resolve().parents[2] / "config" / "failover-drill.json")
@@ -188,16 +232,40 @@ class RecoveryMetricsTest(unittest.TestCase):
         self.assertEqual(config.iterations, 3)
         self.assertEqual(config.gates.rto_seconds_max, 60)
         self.assertEqual(config.gates.rpo_seconds_max, 2)
+        self.assertEqual(config.gates.rpo_lost_writes_max, 0)
         self.assertEqual(config.gates.regression_ratio_max, 0.2)
+        self.assertEqual(config.gates.rto_regression_min_delta_seconds, 0.5)
         self.assertNotIn("p99_latency_ms", config.gates.regression_metrics)
 
+    def test_readme_results_table_is_generated_from_the_config(self) -> None:
+        config = load_config(Path(__file__).resolve().parents[2] / "config" / "failover-drill.json")
+        readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+        section = render_readme_section(config)
+        begin = "<!-- failover-drill-readme:begin -->"
+        end = "<!-- failover-drill-readme:end -->"
+        self.assertIn(begin, readme)
+        self.assertIn(end, readme)
+        extracted = readme.split(begin, 1)[1].split(end, 1)[0]
+        self.assertEqual(extracted, "\n" + section)
+        self.assertIn(MEASUREMENT_SCOPE, section)
+        self.assertIn("./scripts/failover-drill.sh", readme)
+        self.assertIn("not maintained by hand", section)
+        self.assertNotIn("lost_acknowledged_writes", readme)
 
-def _run(index: int = 1, rto: float = 8, rpo: float = 0, errors: int = 1, p99: float = 100) -> dict:
+
+def _run(
+    index: int = 1,
+    rto: float = 8,
+    rpo: float = 0,
+    errors: int = 1,
+    p99: float = 100,
+    lost: int = 0,
+) -> dict:
     return {
         "index": index,
         "rto_seconds": rto,
         "rpo_seconds": rpo,
-        "lost_acknowledged_writes": 0,
+        "rpo_lost_writes": lost,
         "duplicate_writes": 0,
         "error_count": errors,
         "p99_latency_ms": p99,

@@ -7,7 +7,7 @@ from pathlib import Path
 DISPLAY_METRICS: tuple[tuple[str, str, int], ...] = (
     ("rto_seconds", "RTO (s)", 3),
     ("rpo_seconds", "RPO (s)", 3),
-    ("lost_acknowledged_writes", "Lost acknowledged writes", 0),
+    ("rpo_lost_writes", "RPO lost writes", 0),
     ("duplicate_writes", "Duplicate writes", 0),
     ("error_count", "Errors during switchover", 0),
     ("p99_latency_ms", "p99 latency during switchover (ms)", 1),
@@ -20,7 +20,9 @@ METRIC_PLACES = {name: places for name, _label, places in DISPLAY_METRICS}
 class DrillGates:
     rto_seconds_max: float
     rpo_seconds_max: float
+    rpo_lost_writes_max: int
     regression_ratio_max: float
+    rto_regression_min_delta_seconds: float
     regression_metrics: tuple[str, ...]
 
 
@@ -71,7 +73,9 @@ def load_config(path: Path) -> DrillConfig:
     gate_keys = {
         "rto_seconds_max",
         "rpo_seconds_max",
+        "rpo_lost_writes_max",
         "regression_ratio_max",
+        "rto_regression_min_delta_seconds",
         "regression_metrics",
     }
     unknown_gates = set(gates_payload) - gate_keys
@@ -95,7 +99,9 @@ def load_config(path: Path) -> DrillConfig:
     gates = DrillGates(
         rto_seconds_max=float(gates_payload["rto_seconds_max"]),
         rpo_seconds_max=float(gates_payload["rpo_seconds_max"]),
+        rpo_lost_writes_max=int(gates_payload["rpo_lost_writes_max"]),
         regression_ratio_max=float(gates_payload["regression_ratio_max"]),
+        rto_regression_min_delta_seconds=float(gates_payload["rto_regression_min_delta_seconds"]),
         regression_metrics=regression_metrics,
     )
     return DrillConfig(

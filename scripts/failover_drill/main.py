@@ -196,7 +196,7 @@ def _run_iteration(stack: ComposeStack, config, index: int) -> dict:
         "index": index,
         "rto_seconds": rto,
         "rpo_seconds": rpo_seconds,
-        "lost_acknowledged_writes": lost,
+        "rpo_lost_writes": lost,
         "duplicate_writes": duplicate_writes(counts),
         "error_count": errors,
         "p99_latency_ms": p99,

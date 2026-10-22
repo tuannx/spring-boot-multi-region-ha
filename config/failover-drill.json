@@ -13,7 +13,9 @@
   "gates": {
     "rto_seconds_max": 60,
     "rpo_seconds_max": 2,
+    "rpo_lost_writes_max": 0,
     "regression_ratio_max": 0.2,
+    "rto_regression_min_delta_seconds": 0.5,
     "regression_metrics": [
       "rto_seconds",
       "rpo_seconds",

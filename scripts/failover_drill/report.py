@@ -7,6 +7,46 @@ from datetime import datetime, timezone
 from failover_drill.config import DISPLAY_METRICS, METRIC_PLACES, DrillConfig
 from failover_drill.metrics import evaluate_gate, median_metric, metric_delta
 
+MEASUREMENT_SCOPE = "local mock (containers + fault injection), not real Aurora Global"
+
+FIELD_MEANINGS: tuple[tuple[str, str], ...] = (
+    (
+        "rto_seconds",
+        "Seconds from `docker kill` of `multiregion-us` to the first HTTP 201 whose request started after promotion and whose row is stored on `postgres-eu`.",
+    ),
+    (
+        "rpo_seconds",
+        "Seconds from the oldest acknowledged write that is missing on the new writer back to the kill. Zero when every acknowledged write is present.",
+    ),
+    (
+        "rpo_lost_writes",
+        "Count of acknowledged product names missing on the new writer.",
+    ),
+    (
+        "duplicate_writes",
+        "Extra `products` rows for the same drill name. Server retries during the switch can insert the same name twice.",
+    ),
+    (
+        "error_count",
+        "Write responses that are not HTTP 201 and overlap the window from the kill until the recovered write.",
+    ),
+    (
+        "p99_latency_ms",
+        "Nearest-rank p99 of write latencies in that window. It is reported and has no absolute pass/fail limit.",
+    ),
+    (
+        "fault_injected_at",
+        "UTC time immediately before `docker kill` of `multiregion-us`.",
+    ),
+    (
+        "writer_switched_at",
+        "UTC time when `postgres-eu` has accepted writer mode.",
+    ),
+    ("commit_sha", "Git commit the drill measured."),
+    ("run_count", "Number of independent iterations stored in the report."),
+    ("config_sha256", "SHA-256 of the canonical failover drill config JSON."),
+)
+
 
 def aggregate_runs(runs: list[dict]) -> dict:
     aggregate: dict[str, object] = {"method": "median"}
@@ -33,6 +73,7 @@ def build_report(
                 aggregate.get(name) if isinstance(aggregate.get(name), (int, float)) else None,
                 baseline_aggregate.get(name) if isinstance(baseline_aggregate.get(name), (int, float)) else None,
                 config.gates.regression_ratio_max,
+                config.gates.rto_regression_min_delta_seconds,
             )
     gate = evaluate_gate(aggregate, baseline_aggregate if isinstance(baseline_aggregate, dict) else None, config.gates, runs)
     return {
@@ -93,20 +134,12 @@ def render_comment(report: dict) -> str:
         intro += f" [Workflow run]({run_url})."
     lines.append(intro)
     lines.append("")
+    lines.append(f"These numbers are a {MEASUREMENT_SCOPE}.")
+    lines.append("")
     status = "passed" if gate.get("passed") else "failed"
     lines.append(f"Gate: **{status}**")
     lines.append("")
-    lines.append("| Metric | This change | main | Delta |")
-    lines.append("| --- | ---: | ---: | ---: |")
-    for name, label, places in DISPLAY_METRICS:
-        current = _format_metric(aggregate.get(name), places)
-        if isinstance(baseline_aggregate, dict):
-            main_value = _format_metric(baseline_aggregate.get(name), places)
-            delta = _format_delta(deltas.get(name), places)
-        else:
-            main_value = "—"
-            delta = "n/a"
-        lines.append(f"| {label} | {current} | {main_value} | {delta} |")
+    lines.extend(_results_table(aggregate, baseline_aggregate, deltas))
     lines.append("")
     lines.append(
         "RTO is the time from killing the primary database to the first write that "
@@ -116,15 +149,7 @@ def render_comment(report: dict) -> str:
         "that window. p99 has no absolute limit."
     )
     lines.append("")
-    gates = report.get("config", {}).get("gates", {})
-    metrics = ", ".join(gates.get("regression_metrics") or [])
-    lines.append(
-        "Thresholds from `config/failover-drill.json`: "
-        f"RTO ≤ {gates.get('rto_seconds_max')}s, "
-        f"RPO ≤ {gates.get('rpo_seconds_max')}s, "
-        f"regression ≤ {float(gates.get('regression_ratio_max', 0)) * 100:.0f}% "
-        f"on {metrics}."
-    )
+    lines.append(_threshold_sentence(report.get("config", {}).get("gates", {})))
     failures = gate.get("failures") or []
     if failures:
         lines.append("")
@@ -135,7 +160,8 @@ def render_comment(report: dict) -> str:
         lines.append("")
         lines.append(
             "No main baseline artifact was available, so regression deltas were not applied. "
-            "Absolute RTO and RPO limits still apply."
+            "The baseline is kept for 90 days and refreshed by the weekly drill on main. "
+            "Absolute RTO, RPO, and lost-write limits still apply."
         )
     lines.append("")
     lines.append(
@@ -149,6 +175,57 @@ def render_comment(report: dict) -> str:
     lines.append("<!-- architecture-engineer-diff -->")
     lines.append("")
     return "\n".join(lines)
+
+
+def render_readme_section(config: DrillConfig) -> str:
+    aggregate = {name: None for name, _label, _places in DISPLAY_METRICS}
+    lines = [
+        f"These numbers are a {MEASUREMENT_SCOPE}.",
+        "",
+        "The measured results table is rendered from `drill-report.json` by the same function that writes the pull-request comment. "
+        "The rows below are that function applied to `config/failover-drill.json` with an empty sample, so this section is not maintained by hand.",
+        "",
+    ]
+    lines.extend(_results_table(aggregate, None, {}))
+    lines.append("")
+    lines.append("| Field | Meaning |")
+    lines.append("| --- | --- |")
+    for name, meaning in FIELD_MEANINGS:
+        lines.append(f"| `{name}` | {meaning} |")
+    lines.append("")
+    lines.append(_threshold_sentence(config.to_dict().get("gates", {})))
+    return "\n".join(lines) + "\n"
+
+
+def _results_table(aggregate: dict, baseline_aggregate, deltas: dict) -> list[str]:
+    lines = [
+        "| Metric | This change | main | Delta |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for name, label, places in DISPLAY_METRICS:
+        current = _format_metric(aggregate.get(name), places)
+        if isinstance(baseline_aggregate, dict):
+            main_value = _format_metric(baseline_aggregate.get(name), places)
+            delta = _format_delta(deltas.get(name), places)
+        else:
+            main_value = "—"
+            delta = "n/a"
+        lines.append(f"| {label} | {current} | {main_value} | {delta} |")
+    return lines
+
+
+def _threshold_sentence(gates: dict) -> str:
+    metrics = ", ".join(gates.get("regression_metrics") or [])
+    return (
+        "Thresholds from `config/failover-drill.json`: "
+        f"RTO ≤ {gates.get('rto_seconds_max')}s, "
+        f"RPO ≤ {gates.get('rpo_seconds_max')}s, "
+        f"rpo_lost_writes ≤ {gates.get('rpo_lost_writes_max')}, "
+        f"regression ≤ {float(gates.get('regression_ratio_max', 0)) * 100:.0f}% "
+        f"on {metrics}. "
+        "An RTO regression also has to increase by at least "
+        f"{gates.get('rto_regression_min_delta_seconds')}s."
+    )
 
 
 def config_sha256(config: DrillConfig) -> str:

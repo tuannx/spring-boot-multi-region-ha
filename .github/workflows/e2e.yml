@@ -6,6 +6,8 @@ on:
     branches:
       - main
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
 
 concurrency:
   group: e2e-${{ github.ref }}
@@ -164,13 +166,31 @@ jobs:
           if-no-files-found: error
 
       - name: Stage the main baseline
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.drill.outcome == 'success'
+        if: >-
+          always() &&
+          steps.drill.outcome == 'success' &&
+          (
+            github.event_name == 'schedule' ||
+            (
+              github.ref == 'refs/heads/main' &&
+              (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+            )
+          )
         run: |
           mkdir -p reports/failover-drill-baseline
           cp reports/failover-drill/drill-report.json reports/failover-drill-baseline/drill-report.json
 
       - name: Upload the main baseline
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.drill.outcome == 'success'
+        if: >-
+          always() &&
+          steps.drill.outcome == 'success' &&
+          (
+            github.event_name == 'schedule' ||
+            (
+              github.ref == 'refs/heads/main' &&
+              (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+            )
+          )
         uses: actions/upload-artifact@v7.0.1
         with:
           name: failover-drill-baseline
