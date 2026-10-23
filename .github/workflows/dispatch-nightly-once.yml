@@ -1,0 +1,18 @@
+name: Dispatch nightly drill
+
+on:
+  push:
+    branches:
+      - cursor/nightly-failover-drill-44ce
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch the nightly failover drill
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run failover-drill-nightly.yml --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
