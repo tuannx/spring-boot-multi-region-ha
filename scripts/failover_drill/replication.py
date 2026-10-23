@@ -77,6 +77,42 @@ def create_subscription(stack: ComposeStack, host: str = "postgres-us") -> None:
     stack.psql(SECONDARY, subscription_sql(host))
 
 
+def replica_is_caught_up(
+    primary_count: int,
+    replica_count: int,
+    previous: tuple[int, int] | None,
+) -> bool:
+    if previous is None or primary_count <= 0:
+        return False
+    return previous == (primary_count, replica_count) and primary_count == replica_count
+
+
+def drill_product_count(stack: ComposeStack, container: str, run_index: int) -> int:
+    value = stack.psql(
+        container,
+        f"SELECT count(*) FROM products WHERE name LIKE 'drill-r{int(run_index)}-%';",
+    )
+    return int(value or "0")
+
+
+def wait_until_replica_matches(stack: ComposeStack, run_index: int, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    previous: tuple[int, int] | None = None
+    while time.monotonic() < deadline:
+        current = (
+            drill_product_count(stack, PRIMARY, run_index),
+            drill_product_count(stack, SECONDARY, run_index),
+        )
+        if replica_is_caught_up(current[0], current[1], previous):
+            return
+        previous = current
+        time.sleep(0.2)
+    raise StackError(
+        f"postgres-eu did not match postgres-us for drill-r{int(run_index)} "
+        f"within {timeout_seconds}s"
+    )
+
+
 def wait_until_caught_up(stack: ComposeStack, run_index: int, timeout_seconds: float) -> str:
     token = f"drill-sync-r{run_index}-p1"
     stack.psql(

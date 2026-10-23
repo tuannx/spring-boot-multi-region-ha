@@ -1,20 +1,44 @@
 from __future__ import annotations
 
+import http.server
 import json
 import re
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
 from failover_drill.config import load_config, resolve_profile, select_scenarios
 from failover_drill.nightly_issue import MARKER, TITLE, plan_tracking_issue, render_issue_body
 from failover_drill.nightly_report import combine_scenario_reports, render_nightly_markdown, should_publish_baseline
-from failover_drill.replication import subscription_sql
+from failover_drill.replication import replica_is_caught_up, subscription_sql
+from failover_drill.workload import Clock, WorkloadControl, execute_workload
 from failover_drill.report import NIGHTLY_MEASUREMENT_SCOPE, render_comment
 from failover_drill.toxiproxy import latency_toxic_body, proxy_body
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "config" / "failover-drill.json"
+
+
+class _CreatedHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length") or "0")
+        if length:
+            self.rfile.read(length)
+        self.send_response(201)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        body = b"[]"
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, fmt: str, *args) -> None:
+        return
 
 
 class NightlyConfigTest(unittest.TestCase):
@@ -61,6 +85,88 @@ class NightlyConfigTest(unittest.TestCase):
             load_config(self._write(payload))
         with self.assertRaises(ValueError):
             resolve_profile("aurora")
+
+    def test_slow_db_waits_for_two_matching_replica_counts_before_the_kill(self) -> None:
+        self.assertFalse(replica_is_caught_up(4, 4, None))
+        self.assertFalse(replica_is_caught_up(0, 0, (0, 0)))
+        self.assertFalse(replica_is_caught_up(4, 3, (4, 3)))
+        self.assertFalse(replica_is_caught_up(5, 5, (4, 4)))
+        self.assertTrue(replica_is_caught_up(5, 5, (5, 5)))
+
+    def test_paused_writers_finish_one_request_and_then_stay_idle(self) -> None:
+        control = WorkloadControl(Clock())
+        started = threading.Event()
+        release = threading.Event()
+
+        def one_request() -> None:
+            self.assertTrue(control.try_begin_write())
+            started.set()
+            self.assertTrue(release.wait(1))
+            control.end_write()
+            self.assertFalse(control.try_begin_write())
+
+        control.pause_writers()
+        self.assertFalse(control.try_begin_write())
+        control.resume_writers()
+        thread = threading.Thread(target=one_request)
+        thread.start()
+        self.assertTrue(started.wait(1))
+        control.pause_writers()
+        with self.assertRaises(TimeoutError):
+            control.wait_until_idle(0.05)
+        release.set()
+        control.wait_until_idle(1)
+        thread.join(1)
+        self.assertFalse(thread.is_alive())
+
+    def test_marked_fault_starts_at_the_kill_and_not_at_the_drain(self) -> None:
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CreatedHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        url = f"http://127.0.0.1:{server.server_address[1]}"
+        seen: list[int] = []
+
+        def inject(control: WorkloadControl) -> None:
+            seen.append(control.now_ms())
+            time.sleep(0.08)
+            control.mark_fault()
+            seen.append(control.now_ms())
+
+        result = execute_workload(
+            base_url=url,
+            run_index=1,
+            warmup_seconds=0.3,
+            recovery_timeout_seconds=2,
+            write_workers=1,
+            read_workers=0,
+            write_interval_ms=20,
+            read_interval_ms=20,
+            client_timeout_seconds=2,
+            inject_fault=inject,
+        )
+        self.assertGreater(result.fault_ms, seen[0])
+        self.assertLessEqual(result.fault_ms, seen[1])
+        self.assertLess(result.eligible_start_ms - result.fault_ms, 50)
+
+        def unmarked(control: WorkloadControl) -> None:
+            seen.append(control.now_ms())
+
+        seen.clear()
+        unmarked_result = execute_workload(
+            base_url=url,
+            run_index=2,
+            warmup_seconds=0.3,
+            recovery_timeout_seconds=2,
+            write_workers=1,
+            read_workers=0,
+            write_interval_ms=20,
+            read_interval_ms=20,
+            client_timeout_seconds=2,
+            inject_fault=unmarked,
+        )
+        self.assertLessEqual(unmarked_result.fault_ms, seen[0])
 
     def test_subscription_host_is_taken_from_the_scenario(self) -> None:
         sql = subscription_sql("postgres-us.proxy")
