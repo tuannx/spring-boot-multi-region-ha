@@ -77,14 +77,8 @@ def create_subscription(stack: ComposeStack, host: str = "postgres-us") -> None:
     stack.psql(SECONDARY, subscription_sql(host))
 
 
-def replica_is_caught_up(
-    primary_count: int,
-    replica_count: int,
-    previous: tuple[int, int] | None,
-) -> bool:
-    if previous is None or primary_count <= 0:
-        return False
-    return previous == (primary_count, replica_count) and primary_count == replica_count
+def sample_is_replicated(replica_count: int, target: int) -> bool:
+    return target > 0 and replica_count >= target
 
 
 def drill_product_count(stack: ComposeStack, container: str, run_index: int) -> int:
@@ -95,20 +89,20 @@ def drill_product_count(stack: ComposeStack, container: str, run_index: int) -> 
     return int(value or "0")
 
 
-def wait_until_replica_matches(stack: ComposeStack, run_index: int, timeout_seconds: float) -> None:
+def wait_until_replica_reaches_sample(stack: ComposeStack, run_index: int, timeout_seconds: float) -> None:
     deadline = time.monotonic() + timeout_seconds
-    previous: tuple[int, int] | None = None
+    target = 0
     while time.monotonic() < deadline:
-        current = (
-            drill_product_count(stack, PRIMARY, run_index),
-            drill_product_count(stack, SECONDARY, run_index),
-        )
-        if replica_is_caught_up(current[0], current[1], previous):
+        if target <= 0:
+            target = drill_product_count(stack, PRIMARY, run_index)
+            if target <= 0:
+                time.sleep(0.05)
+                continue
+        if sample_is_replicated(drill_product_count(stack, SECONDARY, run_index), target):
             return
-        previous = current
-        time.sleep(0.2)
+        time.sleep(0.05)
     raise StackError(
-        f"postgres-eu did not match postgres-us for drill-r{int(run_index)} "
+        f"postgres-eu did not reach {target} drill-r{int(run_index)} rows "
         f"within {timeout_seconds}s"
     )
 

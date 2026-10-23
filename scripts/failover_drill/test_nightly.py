@@ -12,10 +12,10 @@ from pathlib import Path
 from failover_drill.config import load_config, resolve_profile, select_scenarios
 from failover_drill.nightly_issue import MARKER, TITLE, plan_tracking_issue, render_issue_body
 from failover_drill.nightly_report import combine_scenario_reports, render_nightly_markdown, should_publish_baseline
-from failover_drill.replication import replica_is_caught_up, subscription_sql
+from failover_drill.replication import sample_is_replicated, subscription_sql
 from failover_drill.workload import Clock, WorkloadControl, execute_workload
 from failover_drill.report import NIGHTLY_MEASUREMENT_SCOPE, render_comment
-from failover_drill.toxiproxy import latency_toxic_body, proxy_body, upstream_kill_needs_proxy_reset
+from failover_drill.toxiproxy import latency_toxic_body, proxy_body
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "config" / "failover-drill.json"
@@ -86,12 +86,11 @@ class NightlyConfigTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_profile("aurora")
 
-    def test_slow_db_waits_for_two_matching_replica_counts_before_the_kill(self) -> None:
-        self.assertFalse(replica_is_caught_up(4, 4, None))
-        self.assertFalse(replica_is_caught_up(0, 0, (0, 0)))
-        self.assertFalse(replica_is_caught_up(4, 3, (4, 3)))
-        self.assertFalse(replica_is_caught_up(5, 5, (4, 4)))
-        self.assertTrue(replica_is_caught_up(5, 5, (5, 5)))
+    def test_slow_db_waits_until_the_replica_reaches_the_sampled_primary_count(self) -> None:
+        self.assertFalse(sample_is_replicated(0, 0))
+        self.assertFalse(sample_is_replicated(3, 4))
+        self.assertTrue(sample_is_replicated(4, 4))
+        self.assertTrue(sample_is_replicated(6, 4))
 
     def test_paused_writers_finish_one_request_and_then_stay_idle(self) -> None:
         control = WorkloadControl(Clock())
@@ -190,11 +189,6 @@ class ToxiproxyRequestTest(unittest.TestCase):
         self.assertEqual(body["stream"], "downstream")
         self.assertEqual(body["toxicity"], 1.0)
         self.assertEqual(body["attributes"], {"latency": 200, "jitter": 0})
-
-    def test_only_slow_db_resets_the_proxy_after_promotion(self) -> None:
-        self.assertTrue(upstream_kill_needs_proxy_reset("docker-kill-primary", 200))
-        self.assertFalse(upstream_kill_needs_proxy_reset("docker-kill-primary", 0))
-        self.assertFalse(upstream_kill_needs_proxy_reset("toxiproxy-partition", 0))
         proxy = proxy_body("cross-region-postgres-us", "0.0.0.0:5432", "postgres-us.direct:5432", False)
         self.assertFalse(proxy["enabled"])
         with self.assertRaises(ValueError):

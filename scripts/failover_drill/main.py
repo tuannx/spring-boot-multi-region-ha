@@ -31,11 +31,11 @@ from failover_drill.replication import (
     promote_secondary,
     reset_subscription,
     wait_until_caught_up,
-    wait_until_replica_matches,
+    wait_until_replica_reaches_sample,
 )
 from failover_drill.report import build_report, failure_report, load_baseline, render_comment, write_report
 from failover_drill.stack import ComposeStack, StackError
-from failover_drill.toxiproxy import ToxiproxyClient, upstream_kill_needs_proxy_reset
+from failover_drill.toxiproxy import ToxiproxyClient
 from failover_drill.traces import uncovered_iterations, utc_timestamp
 from failover_drill.workload import execute_workload
 
@@ -216,42 +216,33 @@ def _run_iteration(stack: ComposeStack, config, scenario: ScenarioConfig, toxipr
 
     def inject_fault(control) -> None:
         nonlocal fault_injected_at, writer_switched_at
-        try:
-            if scenario.fault == "docker-kill-primary" and scenario.latency_ms > 0:
-                if toxiproxy is None:
-                    raise StackError("slow-db latency requires Toxiproxy")
-                print(
-                    f"{scenario.name} iteration {index}: pausing writes, clearing latency, and waiting for the replica",
-                    flush=True,
-                )
-                control.pause_writers()
-                toxiproxy.clear_toxics(config.toxiproxy.proxy_name)
-                control.wait_until_idle(config.client_timeout_seconds)
-                wait_until_replica_matches(stack, index, config.replication_catchup_timeout_seconds)
-                control.mark_fault()
-            fault_injected_at = utc_timestamp()
-            if scenario.fault == "docker-kill-primary":
-                print(f"{scenario.name} iteration {index}: killing {PRIMARY}", flush=True)
-                stack.kill(PRIMARY)
-            elif scenario.fault == "toxiproxy-partition":
-                print(f"{scenario.name} iteration {index}: partitioning {config.toxiproxy.proxy_name}", flush=True)
-                if toxiproxy is None:
-                    raise StackError("network partition requires Toxiproxy")
-                toxiproxy.disable(config.toxiproxy.proxy_name)
-            else:
-                raise StackError(f"unknown fault {scenario.fault}")
-            promote_secondary(stack)
-            if upstream_kill_needs_proxy_reset(scenario.fault, scenario.latency_ms):
-                print(
-                    f"{scenario.name} iteration {index}: resetting {config.toxiproxy.proxy_name} after promotion",
-                    flush=True,
-                )
-                if toxiproxy is None:
-                    raise StackError("slow-db proxy reset requires Toxiproxy")
-                toxiproxy.disable(config.toxiproxy.proxy_name)
-            writer_switched_at = utc_timestamp()
-        finally:
-            control.resume_writers()
+        if scenario.fault == "docker-kill-primary" and scenario.latency_ms > 0:
+            if toxiproxy is None:
+                raise StackError("slow-db latency requires Toxiproxy")
+            print(
+                f"{scenario.name} iteration {index}: clearing latency and waiting for the replica",
+                flush=True,
+            )
+            toxiproxy.clear_toxics(config.toxiproxy.proxy_name)
+            wait_until_replica_reaches_sample(
+                stack,
+                index,
+                config.replication_catchup_timeout_seconds,
+            )
+            control.mark_fault()
+        fault_injected_at = utc_timestamp()
+        if scenario.fault == "docker-kill-primary":
+            print(f"{scenario.name} iteration {index}: killing {PRIMARY}", flush=True)
+            stack.kill(PRIMARY)
+        elif scenario.fault == "toxiproxy-partition":
+            print(f"{scenario.name} iteration {index}: partitioning {config.toxiproxy.proxy_name}", flush=True)
+            if toxiproxy is None:
+                raise StackError("network partition requires Toxiproxy")
+            toxiproxy.disable(config.toxiproxy.proxy_name)
+        else:
+            raise StackError(f"unknown fault {scenario.fault}")
+        promote_secondary(stack)
+        writer_switched_at = utc_timestamp()
 
     workload = execute_workload(
         base_url=config.app_eu_url,
