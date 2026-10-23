@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 PROFILES = ("pull-request", "nightly")
@@ -62,6 +62,8 @@ class ScenarioConfig:
     latency_ms: int
     jitter_ms: int
     toxicity: float
+    rpo_seconds_max: float
+    rpo_lost_writes_max: int
 
     @property
     def uses_toxiproxy(self) -> bool:
@@ -177,6 +179,14 @@ def load_config(path: Path) -> DrillConfig:
     )
 
 
+def scenario_gates(config: DrillConfig, scenario: ScenarioConfig) -> DrillGates:
+    return replace(
+        config.gates,
+        rpo_seconds_max=scenario.rpo_seconds_max,
+        rpo_lost_writes_max=scenario.rpo_lost_writes_max,
+    )
+
+
 def select_scenarios(config: DrillConfig, profile: str) -> tuple[ScenarioConfig, ...]:
     if profile not in PROFILES:
         allowed = ", ".join(PROFILES)
@@ -241,6 +251,8 @@ def _load_scenarios(payload: object) -> tuple[ScenarioConfig, ...]:
             "latency_ms",
             "jitter_ms",
             "toxicity",
+            "rpo_seconds_max",
+            "rpo_lost_writes_max",
         }
         _require_exact_keys(entry, keys, "scenario")
         name = str(entry["name"])
@@ -275,6 +287,17 @@ def _load_scenarios(payload: object) -> tuple[ScenarioConfig, ...]:
             raise ValueError("slow-db latency_ms must be a positive fixed delay")
         if name != "slow-db" and latency_ms != 0:
             raise ValueError(f"Scenario {name} must not add latency")
+        rpo_seconds_max = float(entry["rpo_seconds_max"])
+        if type(entry["rpo_seconds_max"]) not in (int, float) or isinstance(entry["rpo_seconds_max"], bool):
+            raise ValueError(f"Scenario {name} rpo_seconds_max must be a number")
+        if rpo_seconds_max < 0:
+            raise ValueError(f"Scenario {name} rpo_seconds_max must be >= 0")
+        lost_max = _require_int(entry["rpo_lost_writes_max"], f"{name} rpo_lost_writes_max")
+        if name == "slow-db":
+            if lost_max <= 0:
+                raise ValueError("slow-db rpo_lost_writes_max must be above zero")
+        elif lost_max != 0 or rpo_seconds_max != 0:
+            raise ValueError(f"Scenario {name} rpo_seconds_max and rpo_lost_writes_max must be 0")
         if name == "network-partition" and fault != "toxiproxy-partition":
             raise ValueError("network-partition must disable the Toxiproxy cross-region proxy")
         if name == "primary-kill" and (fault != "docker-kill-primary" or overlay is not None):
@@ -293,6 +316,8 @@ def _load_scenarios(payload: object) -> tuple[ScenarioConfig, ...]:
                 latency_ms=latency_ms,
                 jitter_ms=jitter_ms,
                 toxicity=toxicity,
+                rpo_seconds_max=rpo_seconds_max,
+                rpo_lost_writes_max=lost_max,
             )
         )
     names = tuple(scenario.name for scenario in scenarios)

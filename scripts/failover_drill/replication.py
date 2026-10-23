@@ -77,36 +77,6 @@ def create_subscription(stack: ComposeStack, host: str = "postgres-us") -> None:
     stack.psql(SECONDARY, subscription_sql(host))
 
 
-def sample_is_replicated(replica_count: int, target: int) -> bool:
-    return target > 0 and replica_count >= target
-
-
-def drill_product_count(stack: ComposeStack, container: str, run_index: int) -> int:
-    value = stack.psql(
-        container,
-        f"SELECT count(*) FROM products WHERE name LIKE 'drill-r{int(run_index)}-%';",
-    )
-    return int(value or "0")
-
-
-def wait_until_replica_reaches_sample(stack: ComposeStack, run_index: int, timeout_seconds: float) -> None:
-    deadline = time.monotonic() + timeout_seconds
-    target = 0
-    while time.monotonic() < deadline:
-        if target <= 0:
-            target = drill_product_count(stack, PRIMARY, run_index)
-            if target <= 0:
-                time.sleep(0.05)
-                continue
-        if sample_is_replicated(drill_product_count(stack, SECONDARY, run_index), target):
-            return
-        time.sleep(0.05)
-    raise StackError(
-        f"postgres-eu did not reach {target} drill-r{int(run_index)} rows "
-        f"within {timeout_seconds}s"
-    )
-
-
 def wait_until_caught_up(stack: ComposeStack, run_index: int, timeout_seconds: float) -> str:
     token = f"drill-sync-r{run_index}-p1"
     stack.psql(

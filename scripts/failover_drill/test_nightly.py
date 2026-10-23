@@ -9,10 +9,11 @@ import time
 import unittest
 from pathlib import Path
 
-from failover_drill.config import load_config, resolve_profile, select_scenarios
+from failover_drill.config import load_config, resolve_profile, scenario_gates, select_scenarios
 from failover_drill.nightly_issue import MARKER, TITLE, plan_tracking_issue, render_issue_body
 from failover_drill.nightly_report import combine_scenario_reports, render_nightly_markdown, should_publish_baseline
-from failover_drill.replication import sample_is_replicated, subscription_sql
+from failover_drill.metrics import evaluate_gate
+from failover_drill.replication import subscription_sql
 from failover_drill.workload import Clock, WorkloadControl, execute_workload
 from failover_drill.report import NIGHTLY_MEASUREMENT_SCOPE, render_comment
 from failover_drill.toxiproxy import ToxiproxyError, latency_toxic_body, proxy_body
@@ -65,6 +66,17 @@ class NightlyConfigTest(unittest.TestCase):
         self.assertEqual(slow.latency_ms, 200)
         self.assertEqual(slow.jitter_ms, 0)
         self.assertEqual(slow.toxicity, 1.0)
+        self.assertEqual(primary.rpo_seconds_max, 0)
+        self.assertEqual(primary.rpo_lost_writes_max, 0)
+        self.assertEqual(partition.rpo_seconds_max, 0)
+        self.assertEqual(partition.rpo_lost_writes_max, 0)
+        self.assertEqual(slow.rpo_seconds_max, 2)
+        self.assertEqual(slow.rpo_lost_writes_max, 4)
+        slow_gates = scenario_gates(config, slow)
+        self.assertEqual(slow_gates.rpo_lost_writes_max, 4)
+        self.assertEqual(slow_gates.rpo_seconds_max, 2)
+        self.assertEqual(slow_gates.rto_seconds_max, config.gates.rto_seconds_max)
+        self.assertEqual(scenario_gates(config, primary).rpo_lost_writes_max, 0)
         self.assertEqual(config.toxiproxy.image, "ghcr.io/shopify/toxiproxy:2.12.0")
         self.assertNotIn("pull-request", partition.profiles)
         self.assertNotIn("pull-request", slow.profiles)
@@ -86,11 +98,22 @@ class NightlyConfigTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_profile("aurora")
 
-    def test_slow_db_waits_until_the_replica_reaches_the_sampled_primary_count(self) -> None:
-        self.assertFalse(sample_is_replicated(0, 0))
-        self.assertFalse(sample_is_replicated(3, 4))
-        self.assertTrue(sample_is_replicated(4, 4))
-        self.assertTrue(sample_is_replicated(6, 4))
+    def test_slow_db_lost_writes_use_the_scenario_limit(self) -> None:
+        config = load_config(CONFIG)
+        slow = scenario_gates(config, config.scenarios[2])
+        primary = scenario_gates(config, config.scenarios[0])
+        allowed = _gate_run(lost=4)
+        self.assertTrue(evaluate_gate(_gate_aggregate(allowed), None, slow, [allowed])["passed"])
+        over = _gate_run(lost=5)
+        over_result = evaluate_gate(_gate_aggregate(over), None, slow, [over])
+        self.assertFalse(over_result["passed"])
+        self.assertTrue(any("rpo_lost_writes 5 exceeds 4" in failure for failure in over_result["failures"]))
+        strict = evaluate_gate(_gate_aggregate(_gate_run(lost=1)), None, primary, [_gate_run(lost=1)])
+        self.assertTrue(any("rpo_lost_writes 1 exceeds 0" in failure for failure in strict["failures"]))
+        payload = json.loads(CONFIG.read_text(encoding="utf-8"))
+        payload["scenarios"][0]["rpo_lost_writes_max"] = 1
+        with self.assertRaises(ValueError):
+            load_config(self._write(payload))
 
     def test_paused_writers_finish_one_request_and_then_stay_idle(self) -> None:
         control = WorkloadControl(Clock())
@@ -366,6 +389,30 @@ def _scenario(name: str, passed: bool, rto: float | None) -> dict:
             "passed": passed,
             "failures": [] if passed else [f"{name} failed"],
         },
+    }
+
+
+def _gate_run(lost: int) -> dict:
+    return {
+        "index": 1,
+        "rto_seconds": 1.0,
+        "rpo_seconds": 0.0,
+        "rpo_lost_writes": lost,
+        "duplicate_writes": 0,
+        "error_count": 0,
+        "p99_latency_ms": 10.0,
+        "driver_failover_verified": True,
+    }
+
+
+def _gate_aggregate(run: dict) -> dict:
+    return {
+        "rto_seconds": run["rto_seconds"],
+        "rpo_seconds": run["rpo_seconds"],
+        "rpo_lost_writes": run["rpo_lost_writes"],
+        "duplicate_writes": run["duplicate_writes"],
+        "error_count": run["error_count"],
+        "p99_latency_ms": run["p99_latency_ms"],
     }
 
 

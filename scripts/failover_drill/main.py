@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from failover_drill.config import ScenarioConfig, load_config, resolve_profile, select_scenarios
+from failover_drill.config import ScenarioConfig, load_config, resolve_profile, scenario_gates, select_scenarios
 from failover_drill.metrics import (
     duplicate_writes,
     read_error_count,
@@ -31,7 +31,6 @@ from failover_drill.replication import (
     promote_secondary,
     reset_subscription,
     wait_until_caught_up,
-    wait_until_replica_reaches_sample,
 )
 from failover_drill.report import build_report, failure_report, load_baseline, render_comment, write_report
 from failover_drill.stack import ComposeStack, StackError
@@ -165,6 +164,7 @@ def _execute(
             run_url,
             _runtime(config, scenario, built),
             baseline,
+            scenario_gates(config, scenario),
         )
         _annotate(report, scenario, profile)
     except Exception:
@@ -216,20 +216,7 @@ def _run_iteration(stack: ComposeStack, config, scenario: ScenarioConfig, toxipr
 
     def inject_fault(control) -> None:
         nonlocal fault_injected_at, writer_switched_at
-        if scenario.fault == "docker-kill-primary" and scenario.latency_ms > 0:
-            if toxiproxy is None:
-                raise StackError("slow-db latency requires Toxiproxy")
-            print(
-                f"{scenario.name} iteration {index}: clearing latency and waiting for the replica",
-                flush=True,
-            )
-            toxiproxy.clear_toxics(config.toxiproxy.proxy_name)
-            wait_until_replica_reaches_sample(
-                stack,
-                index,
-                config.replication_catchup_timeout_seconds,
-            )
-            control.mark_fault()
+        del control
         fault_injected_at = utc_timestamp()
         if scenario.fault == "docker-kill-primary":
             print(f"{scenario.name} iteration {index}: killing {PRIMARY}", flush=True)
