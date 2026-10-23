@@ -16,7 +16,13 @@ from failover_drill.metrics import (
     switchover_p99_ms,
     writes,
 )
-from failover_drill.nightly_report import combine_scenario_reports, measurement_scope_for, render_nightly_markdown, scenario_passed
+from failover_drill.nightly_report import (
+    combine_scenario_reports,
+    measurement_scope_for,
+    render_nightly_markdown,
+    scenario_passed,
+    should_publish_baseline,
+)
 from failover_drill.replication import (
     PRIMARY,
     create_subscription,
@@ -76,7 +82,8 @@ def main(argv: list[str] | None = None) -> int:
     comment = render_comment(report) if profile == "pull-request" else render_nightly_markdown(report)
     comment_path.write_text(comment, encoding="utf-8")
     print(comment, flush=True)
-    if profile == "nightly" and scenario_passed(report, "primary-kill"):
+    ref = os.environ.get("FAILOVER_DRILL_REF", os.environ.get("GITHUB_REF", ""))
+    if should_publish_baseline(profile, ref, scenario_passed(report, "primary-kill")):
         (output.parent / "baseline-eligible").write_text("primary-kill\n", encoding="utf-8")
     if profile == "nightly":
         return 0 if (report.get("nightly_gate") or {}).get("passed") else 1

@@ -583,7 +583,7 @@ The baseline is no longer uploaded by the pull-request workflow. [`.github/workf
 
 These numbers are a local mock (containers + Toxiproxy), not real Aurora Global.
 
-A passing `primary-kill` on that nightly run is stored as `failover-drill-baseline` for 90 days, including when an extended scenario fails, so the pull-request regression gate still has a baseline. The nightly job going red does not fail pull requests. A failure opens or updates one issue titled `[DR] Nightly failover drill`; a later pass closes it. Design trade-offs are in [docs/adr/0001-failover-drill.md](docs/adr/0001-failover-drill.md) and [docs/adr/0002-nightly-failover-drill.md](docs/adr/0002-nightly-failover-drill.md).
+A passing `primary-kill` on a nightly run of `main` is stored as `failover-drill-baseline` for 90 days, including when an extended scenario fails, so the pull-request regression gate still has a baseline. A manual run of another branch does not publish that baseline. The nightly job going red does not fail pull requests. A failure opens or updates one issue titled `[DR] Nightly failover drill`; a later pass closes it. Design trade-offs are in [docs/adr/0001-failover-drill.md](docs/adr/0001-failover-drill.md) and [docs/adr/0002-nightly-failover-drill.md](docs/adr/0002-nightly-failover-drill.md).
 
 ## API Reference
 
