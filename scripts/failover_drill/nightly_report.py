@@ -34,6 +34,10 @@ def combine_scenario_reports(reports: list[dict]) -> dict:
     return combined
 
 
+def should_publish_baseline(profile: str, ref: str, primary_passed: bool) -> bool:
+    return profile == "nightly" and primary_passed and ref == "refs/heads/main"
+
+
 def scenario_passed(report: dict, name: str) -> bool:
     scenarios = report.get("scenarios")
     if not isinstance(scenarios, list):

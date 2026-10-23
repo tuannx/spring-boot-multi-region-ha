@@ -5,6 +5,8 @@ on:
     - cron: "0 6 * * *"
   workflow_dispatch:
 
+permissions: {}
+
 concurrency:
   group: nightly-failover-drill-${{ github.ref }}
   cancel-in-progress: false
@@ -29,6 +31,7 @@ jobs:
       - name: Run the nightly failover drill
         env:
           FAILOVER_DRILL_PROFILE: nightly
+          FAILOVER_DRILL_REF: ${{ github.ref }}
           FAILOVER_DRILL_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           FAILOVER_DRILL_COMMIT_SHA: ${{ github.sha }}
         run: ./scripts/failover-drill.sh
@@ -43,7 +46,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload the main baseline
-        if: always() && hashFiles('reports/failover-drill/baseline-eligible') != ''
+        if: always() && github.ref == 'refs/heads/main' && hashFiles('reports/failover-drill/baseline-eligible') != ''
         uses: actions/upload-artifact@v7.0.1
         with:
           name: failover-drill-baseline

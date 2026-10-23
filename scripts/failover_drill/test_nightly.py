@@ -8,7 +8,7 @@ from pathlib import Path
 
 from failover_drill.config import load_config, resolve_profile, select_scenarios
 from failover_drill.nightly_issue import MARKER, TITLE, plan_tracking_issue, render_issue_body
-from failover_drill.nightly_report import combine_scenario_reports, render_nightly_markdown
+from failover_drill.nightly_report import combine_scenario_reports, render_nightly_markdown, should_publish_baseline
 from failover_drill.replication import subscription_sql
 from failover_drill.report import NIGHTLY_MEASUREMENT_SCOPE, render_comment
 from failover_drill.toxiproxy import latency_toxic_body, proxy_body
@@ -174,15 +174,28 @@ class NightlyReportTest(unittest.TestCase):
         self.assertIn(NIGHTLY_MEASUREMENT_SCOPE, closed.body)
 
 
+class BaselinePublicationTest(unittest.TestCase):
+    def test_baseline_marker_is_written_only_for_a_passing_primary_on_main(self) -> None:
+        self.assertTrue(should_publish_baseline("nightly", "refs/heads/main", True))
+        self.assertFalse(should_publish_baseline("nightly", "refs/heads/cursor/nightly-failover-drill-44ce", True))
+        self.assertFalse(should_publish_baseline("nightly", "refs/heads/main", False))
+        self.assertFalse(should_publish_baseline("pull-request", "refs/heads/main", True))
+        self.assertFalse(should_publish_baseline("nightly", "", True))
+
+
 class WorkflowContractTest(unittest.TestCase):
     def test_nightly_workflow_is_scheduled_on_free_runners_and_does_not_gate_pull_requests(self) -> None:
         nightly = (ROOT / ".github/workflows/failover-drill-nightly.yml").read_text(encoding="utf-8")
         e2e = (ROOT / ".github/workflows/e2e.yml").read_text(encoding="utf-8")
-        self.assertIn('cron: "0 6 * * *"', nightly)
-        self.assertIn("workflow_dispatch:", nightly)
-        self.assertNotIn("pull_request:", nightly)
+        self.assertRegex(nightly, r"(?m)^on:\n  schedule:\n    - cron: \"0 6 \* \* \*\"\n  workflow_dispatch:\n\npermissions: \{\}\n")
+        self.assertNotIn("register:", nightly)
         self.assertNotIn("\n  push:", nightly)
+        self.assertIn("contents: read", nightly)
+        self.assertIn("issues: write", nightly)
+        self.assertIn("github.ref == 'refs/heads/main'", nightly)
+        self.assertIn('cron: "0 6 * * *"', nightly)
         self.assertNotIn("cursor/nightly-failover-drill-44ce", nightly)
+        self.assertFalse((ROOT / ".github/workflows/dispatch-nightly-once.yml").exists())
         self.assertEqual(set(re.findall(r"runs-on:\s*(\S+)", nightly)), {"ubuntu-latest"})
         for banned in ("self-hosted", "macos-", "windows-", "ubuntu-latest-", "gpu"):
             self.assertNotIn(banned, nightly)
