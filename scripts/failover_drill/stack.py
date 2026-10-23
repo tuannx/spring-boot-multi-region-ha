@@ -59,6 +59,9 @@ class ComposeStack:
     def kill(self, container: str) -> None:
         self._run(["docker", "kill", container])
 
+    def restart(self, container: str) -> None:
+        self._run(["docker", "restart", container])
+
     def start(self, container: str) -> None:
         self._run(["docker", "start", container])
 

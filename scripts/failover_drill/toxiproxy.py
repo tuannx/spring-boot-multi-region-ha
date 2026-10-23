@@ -7,7 +7,9 @@ import urllib.request
 
 
 class ToxiproxyError(RuntimeError):
-    pass
+    def __init__(self, message: str, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 def proxy_body(name: str, listen: str, upstream: str, enabled: bool) -> dict:
@@ -95,6 +97,27 @@ class ToxiproxyClient:
         expected: tuple[int, ...] = (200,),
         allow_missing: bool = False,
     ) -> dict | list | None:
+        last_error: ToxiproxyError | None = None
+        for attempt in range(3):
+            try:
+                return self._request_once(method, path, payload, expected, allow_missing)
+            except ToxiproxyError as exc:
+                last_error = exc
+                if not exc.retryable or attempt == 2:
+                    raise
+                time.sleep(0.5)
+        if last_error is None:
+            raise ToxiproxyError(f"Toxiproxy {method} {path} failed")
+        raise last_error
+
+    def _request_once(
+        self,
+        method: str,
+        path: str,
+        payload: dict | None,
+        expected: tuple[int, ...],
+        allow_missing: bool,
+    ) -> dict | list | None:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(self.api_url + path, data=data, method=method)
         if data is not None:
@@ -108,9 +131,11 @@ class ToxiproxyClient:
             if allow_missing and exc.code == 404:
                 return None
             detail = raw.strip()[:500]
-            raise ToxiproxyError(f"Toxiproxy {method} {path} failed with HTTP {exc.code}: {detail}") from exc
+            raise ToxiproxyError(
+                f"Toxiproxy {method} {path} failed with HTTP {exc.code}: {detail}"
+            ) from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
-            raise ToxiproxyError(f"Toxiproxy {method} {path} failed: {exc}") from exc
+            raise ToxiproxyError(f"Toxiproxy {method} {path} failed: {exc}", retryable=True) from exc
         if status not in expected:
             raise ToxiproxyError(f"Toxiproxy {method} {path} returned HTTP {status}")
         if not raw:

@@ -15,7 +15,7 @@ from failover_drill.nightly_report import combine_scenario_reports, render_night
 from failover_drill.replication import sample_is_replicated, subscription_sql
 from failover_drill.workload import Clock, WorkloadControl, execute_workload
 from failover_drill.report import NIGHTLY_MEASUREMENT_SCOPE, render_comment
-from failover_drill.toxiproxy import latency_toxic_body, proxy_body
+from failover_drill.toxiproxy import ToxiproxyError, latency_toxic_body, proxy_body
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "config" / "failover-drill.json"
@@ -189,6 +189,8 @@ class ToxiproxyRequestTest(unittest.TestCase):
         self.assertEqual(body["stream"], "downstream")
         self.assertEqual(body["toxicity"], 1.0)
         self.assertEqual(body["attributes"], {"latency": 200, "jitter": 0})
+        self.assertTrue(ToxiproxyError("timed out", retryable=True).retryable)
+        self.assertFalse(ToxiproxyError("HTTP 500").retryable)
         proxy = proxy_body("cross-region-postgres-us", "0.0.0.0:5432", "postgres-us.direct:5432", False)
         self.assertFalse(proxy["enabled"])
         with self.assertRaises(ValueError):
