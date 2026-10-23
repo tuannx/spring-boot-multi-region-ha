@@ -15,7 +15,7 @@ from failover_drill.nightly_report import combine_scenario_reports, render_night
 from failover_drill.replication import replica_is_caught_up, subscription_sql
 from failover_drill.workload import Clock, WorkloadControl, execute_workload
 from failover_drill.report import NIGHTLY_MEASUREMENT_SCOPE, render_comment
-from failover_drill.toxiproxy import latency_toxic_body, proxy_body
+from failover_drill.toxiproxy import latency_toxic_body, proxy_body, upstream_kill_needs_proxy_reset
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "config" / "failover-drill.json"
@@ -190,6 +190,11 @@ class ToxiproxyRequestTest(unittest.TestCase):
         self.assertEqual(body["stream"], "downstream")
         self.assertEqual(body["toxicity"], 1.0)
         self.assertEqual(body["attributes"], {"latency": 200, "jitter": 0})
+
+    def test_only_slow_db_resets_the_proxy_after_promotion(self) -> None:
+        self.assertTrue(upstream_kill_needs_proxy_reset("docker-kill-primary", 200))
+        self.assertFalse(upstream_kill_needs_proxy_reset("docker-kill-primary", 0))
+        self.assertFalse(upstream_kill_needs_proxy_reset("toxiproxy-partition", 0))
         proxy = proxy_body("cross-region-postgres-us", "0.0.0.0:5432", "postgres-us.direct:5432", False)
         self.assertFalse(proxy["enabled"])
         with self.assertRaises(ValueError):

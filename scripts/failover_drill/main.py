@@ -35,7 +35,7 @@ from failover_drill.replication import (
 )
 from failover_drill.report import build_report, failure_report, load_baseline, render_comment, write_report
 from failover_drill.stack import ComposeStack, StackError
-from failover_drill.toxiproxy import ToxiproxyClient
+from failover_drill.toxiproxy import ToxiproxyClient, upstream_kill_needs_proxy_reset
 from failover_drill.traces import uncovered_iterations, utc_timestamp
 from failover_drill.workload import execute_workload
 
@@ -241,6 +241,14 @@ def _run_iteration(stack: ComposeStack, config, scenario: ScenarioConfig, toxipr
             else:
                 raise StackError(f"unknown fault {scenario.fault}")
             promote_secondary(stack)
+            if upstream_kill_needs_proxy_reset(scenario.fault, scenario.latency_ms):
+                print(
+                    f"{scenario.name} iteration {index}: resetting {config.toxiproxy.proxy_name} after promotion",
+                    flush=True,
+                )
+                if toxiproxy is None:
+                    raise StackError("slow-db proxy reset requires Toxiproxy")
+                toxiproxy.disable(config.toxiproxy.proxy_name)
             writer_switched_at = utc_timestamp()
         finally:
             control.resume_writers()
