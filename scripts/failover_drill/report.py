@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from failover_drill.config import DISPLAY_METRICS, METRIC_PLACES, DrillConfig
+from failover_drill.config import DISPLAY_METRICS, METRIC_PLACES, DrillConfig, DrillGates
 from failover_drill.metrics import evaluate_gate, median_metric, metric_delta
 
 MEASUREMENT_SCOPE = "local mock (containers + fault injection), not real Aurora Global"
@@ -65,6 +65,7 @@ def build_report(
     workflow_run_url: str | None,
     runtime: dict,
     baseline: dict | None,
+    gates: DrillGates | None = None,
 ) -> dict:
     aggregate = aggregate_runs(runs)
     baseline_aggregate = None if baseline is None else baseline.get("aggregate")
@@ -78,7 +79,12 @@ def build_report(
                 config.gates.regression_ratio_max,
                 config.gates.regression_min_deltas(),
             )
-    gate = evaluate_gate(aggregate, baseline_aggregate if isinstance(baseline_aggregate, dict) else None, config.gates, runs)
+    gate = evaluate_gate(
+        aggregate,
+        baseline_aggregate if isinstance(baseline_aggregate, dict) else None,
+        config.gates if gates is None else gates,
+        runs,
+    )
     return {
         "schema_version": 1,
         "commit_sha": commit_sha,
@@ -152,7 +158,7 @@ def render_comment(report: dict) -> str:
         "that window. p99 has no absolute limit."
     )
     lines.append("")
-    lines.append(_threshold_sentence(report.get("config", {}).get("gates", {})))
+    lines.append(_threshold_sentence(_applied_gates(report)))
     failures = gate.get("failures") or []
     if failures:
         lines.append("")
@@ -208,7 +214,11 @@ def render_readme_section(config: DrillConfig) -> str:
     for name, meaning in FIELD_MEANINGS:
         lines.append(f"| `{name}` | {meaning} |")
     lines.append("")
-    lines.append(_threshold_sentence(config.to_dict().get("gates", {})))
+    gates = dict(config.to_dict().get("gates", {}))
+    primary = next(scenario for scenario in config.scenarios if scenario.name == "primary-kill")
+    gates["rpo_seconds_max"] = primary.rpo_seconds_max
+    gates["rpo_lost_writes_max"] = primary.rpo_lost_writes_max
+    lines.append(_threshold_sentence(gates))
     return "\n".join(lines) + "\n"
 
 
@@ -229,13 +239,33 @@ def _results_table(aggregate: dict, baseline_aggregate, deltas: dict) -> list[st
     return lines
 
 
+def _applied_gates(report: dict) -> dict:
+    config = report.get("config") if isinstance(report.get("config"), dict) else {}
+    gates = dict(config.get("gates") or {})
+    scenario_name = report.get("scenario")
+    for scenario in config.get("scenarios") or []:
+        if isinstance(scenario, dict) and scenario.get("name") == scenario_name:
+            if "rpo_seconds_max" in scenario:
+                gates["rpo_seconds_max"] = scenario["rpo_seconds_max"]
+            if "rpo_lost_writes_max" in scenario:
+                gates["rpo_lost_writes_max"] = scenario["rpo_lost_writes_max"]
+            break
+    return gates
+
+
+def _threshold_text(value: object) -> str:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 def _threshold_sentence(gates: dict) -> str:
     metrics = ", ".join(gates.get("regression_metrics") or [])
     return (
         "Thresholds from `config/failover-drill.json`: "
-        f"RTO ≤ {gates.get('rto_seconds_max')}s, "
-        f"RPO ≤ {gates.get('rpo_seconds_max')}s, "
-        f"rpo_lost_writes ≤ {gates.get('rpo_lost_writes_max')}, "
+        f"RTO ≤ {_threshold_text(gates.get('rto_seconds_max'))}s, "
+        f"RPO ≤ {_threshold_text(gates.get('rpo_seconds_max'))}s, "
+        f"rpo_lost_writes ≤ {_threshold_text(gates.get('rpo_lost_writes_max'))}, "
         f"duplicate_writes ≤ {gates.get('duplicate_writes_max')}, "
         f"regression ≤ {float(gates.get('regression_ratio_max', 0)) * 100:.0f}% "
         f"on {metrics}. "

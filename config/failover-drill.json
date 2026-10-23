@@ -26,7 +26,9 @@
       "compose_overlay": null,
       "latency_ms": 0,
       "jitter_ms": 0,
-      "toxicity": 1
+      "toxicity": 1,
+      "rpo_seconds_max": 0,
+      "rpo_lost_writes_max": 0
     },
     {
       "name": "network-partition",
@@ -36,7 +38,9 @@
       "compose_overlay": "docker-compose.failover-drill-extended.yml",
       "latency_ms": 0,
       "jitter_ms": 0,
-      "toxicity": 1
+      "toxicity": 1,
+      "rpo_seconds_max": 0,
+      "rpo_lost_writes_max": 0
     },
     {
       "name": "slow-db",
@@ -46,7 +50,9 @@
       "compose_overlay": "docker-compose.failover-drill-extended.yml",
       "latency_ms": 200,
       "jitter_ms": 0,
-      "toxicity": 1
+      "toxicity": 1,
+      "rpo_seconds_max": 2,
+      "rpo_lost_writes_max": 4
     }
   ],
   "gates": {
