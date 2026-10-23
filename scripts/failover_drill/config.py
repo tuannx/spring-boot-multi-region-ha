@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+PROFILES = ("pull-request", "nightly")
+FAULTS = ("docker-kill-primary", "toxiproxy-partition")
+SCENARIO_NAMES = ("primary-kill", "network-partition", "slow-db")
+_HOSTNAME = re.compile(r"[a-z0-9][a-z0-9.-]*")
+_LISTEN = re.compile(r"0\.0\.0\.0:[0-9]+")
 
 DISPLAY_METRICS: tuple[tuple[str, str, int], ...] = (
     ("rto_seconds", "RTO (s)", 3),
@@ -37,6 +44,33 @@ class DrillGates:
 
 
 @dataclass(frozen=True)
+class ToxiproxyConfig:
+    image: str
+    api_url: str
+    proxy_name: str
+    listen: str
+    upstream: str
+
+
+@dataclass(frozen=True)
+class ScenarioConfig:
+    name: str
+    profiles: tuple[str, ...]
+    fault: str
+    replication_host: str
+    compose_overlay: str | None
+    latency_ms: int
+    jitter_ms: int
+    toxicity: float
+    rpo_seconds_max: float
+    rpo_lost_writes_max: int
+
+    @property
+    def uses_toxiproxy(self) -> bool:
+        return self.compose_overlay is not None
+
+
+@dataclass(frozen=True)
 class DrillConfig:
     iterations: int
     warmup_seconds: float
@@ -50,6 +84,8 @@ class DrillConfig:
     replication_catchup_timeout_seconds: float
     app_eu_url: str
     gates: DrillGates
+    toxiproxy: ToxiproxyConfig
+    scenarios: tuple[ScenarioConfig, ...]
     source: dict
 
     def to_dict(self) -> dict:
@@ -71,6 +107,8 @@ def load_config(path: Path) -> DrillConfig:
         "replication_catchup_timeout_seconds",
         "app_eu_url",
         "gates",
+        "toxiproxy",
+        "scenarios",
     }
     unknown = set(payload) - expected
     if unknown:
@@ -109,6 +147,8 @@ def load_config(path: Path) -> DrillConfig:
     if int(payload["write_workers"]) < 1:
         raise ValueError("write_workers must be at least 1")
 
+    toxiproxy = _load_toxiproxy(payload["toxiproxy"])
+    scenarios = _load_scenarios(payload["scenarios"])
     gates = DrillGates(
         rto_seconds_max=float(gates_payload["rto_seconds_max"]),
         rpo_seconds_max=float(gates_payload["rpo_seconds_max"]),
@@ -133,5 +173,171 @@ def load_config(path: Path) -> DrillConfig:
         replication_catchup_timeout_seconds=float(payload["replication_catchup_timeout_seconds"]),
         app_eu_url=str(payload["app_eu_url"]).rstrip("/"),
         gates=gates,
+        toxiproxy=toxiproxy,
+        scenarios=scenarios,
         source=payload,
     )
+
+
+def scenario_gates(config: DrillConfig, scenario: ScenarioConfig) -> DrillGates:
+    return replace(
+        config.gates,
+        rpo_seconds_max=scenario.rpo_seconds_max,
+        rpo_lost_writes_max=scenario.rpo_lost_writes_max,
+    )
+
+
+def select_scenarios(config: DrillConfig, profile: str) -> tuple[ScenarioConfig, ...]:
+    if profile not in PROFILES:
+        allowed = ", ".join(PROFILES)
+        raise ValueError(f"Unknown failover drill profile {profile!r}; expected {allowed}")
+    selected = tuple(scenario for scenario in config.scenarios if profile in scenario.profiles)
+    if not selected:
+        raise ValueError(f"Profile {profile} does not select a scenario")
+    if profile == "pull-request":
+        names = tuple(scenario.name for scenario in selected)
+        if names != ("primary-kill",):
+            raise ValueError(f"pull-request profile must run only primary-kill, got {list(names)}")
+    return selected
+
+
+def resolve_profile(value: str | None) -> str:
+    profile = value or "pull-request"
+    if profile not in PROFILES:
+        allowed = ", ".join(PROFILES)
+        raise ValueError(f"Unknown failover drill profile {profile!r}; expected {allowed}")
+    return profile
+
+
+def _load_toxiproxy(payload: object) -> ToxiproxyConfig:
+    if not isinstance(payload, dict):
+        raise ValueError("toxiproxy must be an object")
+    keys = {"image", "api_url", "proxy_name", "listen", "upstream"}
+    _require_exact_keys(payload, keys, "toxiproxy")
+    image = str(payload["image"])
+    if ":" not in image or image.endswith(":latest"):
+        raise ValueError("toxiproxy image must be pinned to an immutable tag")
+    listen = str(payload["listen"])
+    upstream = str(payload["upstream"])
+    if _LISTEN.fullmatch(listen) is None:
+        raise ValueError(f"toxiproxy listen must be 0.0.0.0:<port>, got {listen}")
+    if not upstream.endswith(":5432") or _HOSTNAME.fullmatch(upstream.split(":", 1)[0]) is None:
+        raise ValueError(f"toxiproxy upstream is not a pinned host:5432, got {upstream}")
+    api_url = str(payload["api_url"]).rstrip("/")
+    if not api_url.startswith("http://127.0.0.1:"):
+        raise ValueError("toxiproxy api_url must be an IPv4 loopback URL")
+    return ToxiproxyConfig(
+        image=image,
+        api_url=api_url,
+        proxy_name=str(payload["proxy_name"]),
+        listen=listen,
+        upstream=upstream,
+    )
+
+
+def _load_scenarios(payload: object) -> tuple[ScenarioConfig, ...]:
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("scenarios must be a non-empty list in run order")
+    scenarios: list[ScenarioConfig] = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            raise ValueError("each scenario must be an object")
+        keys = {
+            "name",
+            "profiles",
+            "fault",
+            "replication_host",
+            "compose_overlay",
+            "latency_ms",
+            "jitter_ms",
+            "toxicity",
+            "rpo_seconds_max",
+            "rpo_lost_writes_max",
+        }
+        _require_exact_keys(entry, keys, "scenario")
+        name = str(entry["name"])
+        if name not in SCENARIO_NAMES:
+            raise ValueError(f"Unknown scenario {name}")
+        profiles = tuple(entry["profiles"])
+        if not profiles or any(profile not in PROFILES for profile in profiles):
+            raise ValueError(f"Scenario {name} has profiles outside {list(PROFILES)}")
+        fault = str(entry["fault"])
+        if fault not in FAULTS:
+            raise ValueError(f"Scenario {name} has unknown fault {fault}")
+        host = str(entry["replication_host"])
+        if _HOSTNAME.fullmatch(host) is None:
+            raise ValueError(f"Scenario {name} has an invalid replication host")
+        overlay = entry["compose_overlay"]
+        if overlay is not None:
+            overlay = str(overlay)
+            if "/" in overlay or not overlay.endswith(".yml"):
+                raise ValueError(f"Scenario {name} compose overlay must be a single yml file name")
+        latency_ms = _require_int(entry["latency_ms"], f"{name} latency_ms")
+        jitter_ms = _require_int(entry["jitter_ms"], f"{name} jitter_ms")
+        if jitter_ms != 0:
+            raise ValueError(f"Scenario {name} jitter_ms must be 0 so the slow-db delay is deterministic")
+        if type(entry["toxicity"]) not in (int, float) or bool(entry["toxicity"]) is entry["toxicity"]:
+            raise ValueError(f"Scenario {name} toxicity must be a number")
+        toxicity = float(entry["toxicity"])
+        if toxicity != 1.0:
+            raise ValueError(f"Scenario {name} toxicity must be 1 so every connection takes the toxic")
+        if latency_ms < 0:
+            raise ValueError(f"Scenario {name} latency_ms must be >= 0")
+        if name == "slow-db" and latency_ms <= 0:
+            raise ValueError("slow-db latency_ms must be a positive fixed delay")
+        if name != "slow-db" and latency_ms != 0:
+            raise ValueError(f"Scenario {name} must not add latency")
+        rpo_seconds_max = float(entry["rpo_seconds_max"])
+        if type(entry["rpo_seconds_max"]) not in (int, float) or isinstance(entry["rpo_seconds_max"], bool):
+            raise ValueError(f"Scenario {name} rpo_seconds_max must be a number")
+        if rpo_seconds_max < 0:
+            raise ValueError(f"Scenario {name} rpo_seconds_max must be >= 0")
+        lost_max = _require_int(entry["rpo_lost_writes_max"], f"{name} rpo_lost_writes_max")
+        if name == "slow-db":
+            if lost_max <= 0:
+                raise ValueError("slow-db rpo_lost_writes_max must be above zero")
+        elif lost_max != 0 or rpo_seconds_max != 0:
+            raise ValueError(f"Scenario {name} rpo_seconds_max and rpo_lost_writes_max must be 0")
+        if name == "network-partition" and fault != "toxiproxy-partition":
+            raise ValueError("network-partition must disable the Toxiproxy cross-region proxy")
+        if name == "primary-kill" and (fault != "docker-kill-primary" or overlay is not None):
+            raise ValueError("primary-kill must kill the primary container without a Toxiproxy overlay")
+        if name != "primary-kill" and overlay is None:
+            raise ValueError(f"Scenario {name} requires the Toxiproxy compose overlay")
+        if "pull-request" in profiles and name != "primary-kill":
+            raise ValueError(f"Scenario {name} is nightly-only")
+        scenarios.append(
+            ScenarioConfig(
+                name=name,
+                profiles=profiles,
+                fault=fault,
+                replication_host=host,
+                compose_overlay=overlay,
+                latency_ms=latency_ms,
+                jitter_ms=jitter_ms,
+                toxicity=toxicity,
+                rpo_seconds_max=rpo_seconds_max,
+                rpo_lost_writes_max=lost_max,
+            )
+        )
+    names = tuple(scenario.name for scenario in scenarios)
+    if names != SCENARIO_NAMES:
+        raise ValueError(f"scenarios must be {list(SCENARIO_NAMES)} in that order")
+    if len({scenario.compose_overlay for scenario in scenarios if scenario.compose_overlay}) != 1:
+        raise ValueError("extended scenarios must share one compose overlay")
+    return tuple(scenarios)
+
+
+def _require_exact_keys(payload: dict, keys: set[str], label: str) -> None:
+    unknown = set(payload) - keys
+    if unknown:
+        raise ValueError(f"Unknown {label} keys: {sorted(unknown)}")
+    missing = keys - set(payload)
+    if missing:
+        raise ValueError(f"Missing {label} keys: {sorted(missing)}")
+
+
+def _require_int(value: object, name: str) -> int:
+    if type(value) is not int:
+        raise ValueError(f"{name} must be an integer")
+    return value

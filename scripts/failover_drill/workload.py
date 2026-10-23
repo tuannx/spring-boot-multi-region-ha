@@ -25,6 +25,53 @@ class Clock:
         return int((time.monotonic() - self._origin) * 1000)
 
 
+class WorkloadControl:
+    def __init__(self, clock: Clock) -> None:
+        self._clock = clock
+        self._pause = threading.Event()
+        self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._in_flight = 0
+        self.fault_ms: int | None = None
+
+    def now_ms(self) -> int:
+        return self._clock.ms()
+
+    def pause_writers(self) -> None:
+        self._pause.set()
+
+    def resume_writers(self) -> None:
+        self._pause.clear()
+
+    def try_begin_write(self) -> bool:
+        with self._lock:
+            if self._pause.is_set():
+                return False
+            self._in_flight += 1
+            return True
+
+    def end_write(self) -> None:
+        with self._idle:
+            self._in_flight -= 1
+            if self._in_flight == 0:
+                self._idle.notify_all()
+
+    def wait_until_idle(self, timeout_seconds: float) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        with self._idle:
+            while self._in_flight > 0:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"workload writers were still in flight after {timeout_seconds}s"
+                    )
+                self._idle.wait(remaining)
+
+    def mark_fault(self) -> None:
+        if self.fault_ms is None:
+            self.fault_ms = self._clock.ms()
+
+
 def execute_workload(
     base_url: str,
     run_index: int,
@@ -38,6 +85,7 @@ def execute_workload(
     inject_fault,
 ) -> WorkloadResult:
     clock = Clock()
+    control = WorkloadControl(clock)
     stop = threading.Event()
     lock = threading.Lock()
     attempts: list[Attempt] = []
@@ -56,6 +104,7 @@ def execute_workload(
                 stop,
                 lock,
                 attempts,
+                control,
             ),
             daemon=True,
         )
@@ -96,31 +145,34 @@ def execute_workload(
             f"warmup produced {len(warmup_writes)} acknowledged writes, expected at least {write_workers}"
         )
 
-    fault_ms = clock.ms()
-    inject_fault()
-    eligible_start_ms = clock.ms()
-    deadline = time.monotonic() + recovery_timeout_seconds
-    probe = 0
-    while time.monotonic() < deadline:
-        name = f"drill-r{run_index}-wP-n{probe:06d}"
-        probe += 1
-        started = clock.ms()
-        status = _request(
-            base_url + "/api/products",
-            "POST",
-            {"name": name, "price": 1.0},
-            client_timeout_seconds,
-        )
-        finished = clock.ms()
-        with lock:
-            attempts.append(Attempt("write", name, started, finished, status))
-        if status == 201:
-            time.sleep(0.5)
-            break
-
-    stop.set()
-    for thread in threads:
-        thread.join(timeout=client_timeout_seconds + 1)
+    entered_fault_ms = clock.ms()
+    try:
+        inject_fault(control)
+        fault_ms = entered_fault_ms if control.fault_ms is None else control.fault_ms
+        eligible_start_ms = clock.ms()
+        deadline = time.monotonic() + recovery_timeout_seconds
+        probe = 0
+        while time.monotonic() < deadline:
+            name = f"drill-r{run_index}-wP-n{probe:06d}"
+            probe += 1
+            started = clock.ms()
+            status = _request(
+                base_url + "/api/products",
+                "POST",
+                {"name": name, "price": 1.0},
+                client_timeout_seconds,
+            )
+            finished = clock.ms()
+            with lock:
+                attempts.append(Attempt("write", name, started, finished, status))
+            if status == 201:
+                time.sleep(0.5)
+                break
+    finally:
+        stop.set()
+        control.resume_writers()
+        for thread in threads:
+            thread.join(timeout=client_timeout_seconds + 1)
     return WorkloadResult(
         attempts=list(attempts),
         fault_ms=fault_ms,
@@ -144,22 +196,30 @@ def _writer(
     stop: threading.Event,
     lock: threading.Lock,
     attempts: list[Attempt],
+    control: WorkloadControl,
 ) -> None:
     time.sleep(worker * (interval_ms / workers) / 1000)
     sequence = 0
     while not stop.is_set():
+        if not control.try_begin_write():
+            if stop.wait(0.05):
+                return
+            continue
         name = f"drill-r{run_index}-w{worker}-n{sequence:06d}"
         sequence += 1
-        started = clock.ms()
-        status = _request(
-            base_url + "/api/products",
-            "POST",
-            {"name": name, "price": 1.0},
-            timeout_seconds,
-        )
-        finished = clock.ms()
-        with lock:
-            attempts.append(Attempt("write", name, started, finished, status))
+        try:
+            started = clock.ms()
+            status = _request(
+                base_url + "/api/products",
+                "POST",
+                {"name": name, "price": 1.0},
+                timeout_seconds,
+            )
+            finished = clock.ms()
+            with lock:
+                attempts.append(Attempt("write", name, started, finished, status))
+        finally:
+            control.end_write()
         remaining = interval_ms - (finished - started)
         if remaining > 0 and stop.wait(remaining / 1000):
             return
