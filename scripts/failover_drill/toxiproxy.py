@@ -10,10 +10,6 @@ class ToxiproxyError(RuntimeError):
     pass
 
 
-def upstream_kill_needs_proxy_reset(fault: str, latency_ms: int) -> bool:
-    return fault == "docker-kill-primary" and latency_ms > 0
-
-
 def proxy_body(name: str, listen: str, upstream: str, enabled: bool) -> dict:
     return {
         "name": name,
