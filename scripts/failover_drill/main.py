@@ -150,7 +150,7 @@ def _execute(
         stack.up()
         timeout = config.stack_ready_timeout_seconds
         if toxiproxy is not None:
-            _prepare_proxy(toxiproxy, config, scenario, timeout)
+            _prepare_proxy(stack, toxiproxy, config, scenario, timeout)
         ensure_primary(stack, timeout)
         stack.wait_http("http://localhost:8080", timeout)
         stack.wait_http(config.app_eu_url, timeout)
@@ -201,7 +201,7 @@ def _run_iteration(stack: ComposeStack, config, scenario: ScenarioConfig, toxipr
     print(f"{scenario.name} iteration {index}: preparing replication", flush=True)
     timeout = config.stack_ready_timeout_seconds
     if toxiproxy is not None:
-        _prepare_proxy(toxiproxy, config, scenario, timeout)
+        _prepare_proxy(stack, toxiproxy, config, scenario, timeout)
     ensure_primary(stack, timeout)
     stack.stop_apps()
     reset_subscription(stack)
@@ -323,8 +323,9 @@ def _verified(scenario: ScenarioConfig, us_status: str, eu_writer: bool, rto: fl
     return us_status == "exited"
 
 
-def _prepare_proxy(toxiproxy: ToxiproxyClient, config, scenario: ScenarioConfig, timeout_seconds: float) -> None:
+def _prepare_proxy(stack: ComposeStack, toxiproxy: ToxiproxyClient, config, scenario: ScenarioConfig, timeout_seconds: float) -> None:
     proxy = config.toxiproxy
+    stack.restart("multiregion-toxiproxy")
     toxiproxy.wait_ready(timeout_seconds)
     toxiproxy.ensure_proxy(proxy.proxy_name, proxy.listen, proxy.upstream)
     toxiproxy.enable(proxy.proxy_name)
