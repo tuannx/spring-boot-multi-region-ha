@@ -256,7 +256,7 @@ services:
   localstack:
     profiles:
       - kinesis
-    image: localstack/localstack:4.9.1
+    image: localstack/localstack:4.14.0
     container_name: multiregion-localstack
     environment:
       SERVICES: kinesis,sqs
