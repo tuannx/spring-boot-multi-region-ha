@@ -14,10 +14,13 @@ from failover_drill.metrics import (
     switchover_error_count,
     switchover_p99_ms,
 )
+from failover_drill.architecture_diff import composite_shell
 from failover_drill.report import (
+    ARCHITECTURE_DIFF_UNAVAILABLE,
     MEASUREMENT_SCOPE,
     aggregate_runs,
     build_report,
+    record_unavailable_architecture_diff,
     render_comment,
     render_readme_section,
 )
@@ -237,7 +240,61 @@ class RecoveryMetricsTest(unittest.TestCase):
         self.assertIn("fault_injected_at", comment)
         self.assertIn("<!-- architecture-engineer-diff -->", comment)
         self.assertIn("## Architecture diff", comment)
+        self.assertNotIn(ARCHITECTURE_DIFF_UNAVAILABLE, comment)
         self.assertNotIn("hand-edited", comment)
+
+    def test_an_empty_architecture_diff_slot_is_marked_unavailable(self) -> None:
+        comment = "## Architecture diff\n\n<!-- architecture-engineer-diff -->\n"
+        updated, unavailable = record_unavailable_architecture_diff(comment)
+        self.assertTrue(unavailable)
+        self.assertEqual(
+            updated,
+            "## Architecture diff\n\n<!-- architecture-engineer-diff -->\nAE diff unavailable\n",
+        )
+        again, still_unavailable = record_unavailable_architecture_diff(updated)
+        self.assertFalse(still_unavailable)
+        self.assertEqual(again, updated)
+
+    def test_a_filled_architecture_diff_slot_is_left_unchanged(self) -> None:
+        comment = (
+            "## Architecture diff\n\n<!-- architecture-engineer-diff -->\n"
+            "writer pool moved during the kill\n"
+        )
+        updated, unavailable = record_unavailable_architecture_diff(comment)
+        self.assertFalse(unavailable)
+        self.assertEqual(updated, comment)
+
+    def test_composite_action_commands_receive_the_drill_paths(self) -> None:
+        action = """
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: tool --trace ${{ inputs.trace }} --report ${{ inputs.report }}
+    - run: |
+        splice --comment ${{ inputs.comment }}
+        echo ${{ github.action_path }}
+"""
+        shell = composite_shell(
+            action,
+            trace="reports/failover-drill/otlp-trace.json",
+            report="reports/failover-drill/drill-report.json",
+            comment="reports/failover-drill/comment.md",
+            action_path="/tmp/architecture-engineer/action",
+        )
+        self.assertIn("tool --trace reports/failover-drill/otlp-trace.json", shell or "")
+        self.assertIn("--report reports/failover-drill/drill-report.json", shell or "")
+        self.assertIn("splice --comment reports/failover-drill/comment.md", shell or "")
+        self.assertIn("/tmp/architecture-engineer/action", shell or "")
+
+    def test_a_non_composite_action_is_not_run_as_shell(self) -> None:
+        self.assertIsNone(composite_shell("runs:\n  using: node20\n", trace="", report="", comment="", action_path=""))
+
+    def test_whitespace_after_the_architecture_diff_marker_counts_as_empty(self) -> None:
+        comment = "<!-- architecture-engineer-diff -->\n\n  \n"
+        updated, unavailable = record_unavailable_architecture_diff(comment)
+        self.assertTrue(unavailable)
+        self.assertEqual(updated, "<!-- architecture-engineer-diff -->\nAE diff unavailable\n")
 
     def test_missing_baseline_renders_an_empty_main_column(self) -> None:
         runs = [ _run(index=1), _run(index=2, rto=9), _run(index=3, rto=11)]
