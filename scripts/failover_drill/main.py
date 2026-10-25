@@ -26,10 +26,12 @@ from failover_drill.nightly_report import (
 from failover_drill.replication import (
     PRIMARY,
     create_subscription,
+    enable_synchronous_apply,
     ensure_primary,
     product_counts,
     promote_secondary,
     reset_subscription,
+    synchronous_apply_required,
     wait_until_caught_up,
 )
 from failover_drill.report import build_report, failure_report, load_baseline, render_comment, write_report
@@ -206,6 +208,9 @@ def _run_iteration(stack: ComposeStack, config, scenario: ScenarioConfig, toxipr
     stack.stop_apps()
     reset_subscription(stack)
     create_subscription(stack, scenario.replication_host)
+    if synchronous_apply_required(scenario):
+        print(f"{scenario.name} iteration {index}: waiting for synchronous apply", flush=True)
+        enable_synchronous_apply(stack, config.replication_catchup_timeout_seconds)
     wait_until_caught_up(stack, index, config.replication_catchup_timeout_seconds)
     stack.start_apps()
     stack.wait_http("http://localhost:8080", timeout)

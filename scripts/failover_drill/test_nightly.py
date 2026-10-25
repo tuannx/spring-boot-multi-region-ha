@@ -13,7 +13,12 @@ from failover_drill.config import load_config, resolve_profile, scenario_gates, 
 from failover_drill.nightly_issue import MARKER, TITLE, plan_tracking_issue, render_issue_body
 from failover_drill.nightly_report import combine_scenario_reports, render_nightly_markdown, should_publish_baseline
 from failover_drill.metrics import evaluate_gate
-from failover_drill.replication import subscription_sql
+from failover_drill.replication import (
+    disable_synchronous_apply_sql,
+    enable_synchronous_apply_sql,
+    subscription_sql,
+    synchronous_apply_required,
+)
 from failover_drill.workload import Clock, WorkloadControl, execute_workload
 from failover_drill.report import NIGHTLY_MEASUREMENT_SCOPE, render_comment
 from failover_drill.toxiproxy import ToxiproxyError, latency_toxic_body, proxy_body
@@ -193,9 +198,24 @@ class NightlyConfigTest(unittest.TestCase):
     def test_subscription_host_is_taken_from_the_scenario(self) -> None:
         sql = subscription_sql("postgres-us.proxy")
         self.assertIn("host=postgres-us.proxy", sql)
+        self.assertIn("application_name=drill_products", sql)
         self.assertNotIn("host=postgres-us ", sql)
         with self.assertRaises(ValueError):
             subscription_sql("postgres-us;drop")
+
+    def test_zero_loss_scenarios_wait_for_apply_and_slow_db_does_not(self) -> None:
+        config = load_config(CONFIG)
+        by_name = {scenario.name: scenario for scenario in config.scenarios}
+        self.assertTrue(synchronous_apply_required(by_name["primary-kill"]))
+        self.assertTrue(synchronous_apply_required(by_name["network-partition"]))
+        self.assertFalse(synchronous_apply_required(by_name["slow-db"]))
+        enabled = enable_synchronous_apply_sql()
+        self.assertIn("synchronous_commit = 'remote_apply'", enabled)
+        self.assertIn("FIRST 1 (drill_products)", enabled)
+        disabled = disable_synchronous_apply_sql()
+        self.assertIn("synchronous_commit = local", disabled)
+        self.assertIn("synchronous_commit = 'on'", disabled)
+        self.assertIn("RESET synchronous_standby_names", disabled)
 
     def _write(self, payload: dict) -> Path:
         directory = Path(tempfile.mkdtemp())

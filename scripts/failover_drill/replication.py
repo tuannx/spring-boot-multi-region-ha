@@ -11,6 +11,7 @@ PRIMARY = "multiregion-us"
 SECONDARY = "multiregion-eu"
 PUBLICATION = "drill_products"
 SUBSCRIPTION = "drill_products"
+SYNC_APPLICATION = "drill_products"
 
 
 def ensure_primary(stack: ComposeStack, timeout_seconds: float) -> None:
@@ -27,7 +28,59 @@ def ensure_primary(stack: ComposeStack, timeout_seconds: float) -> None:
         raise StackError("logical replication requires the application role to be a superuser")
 
 
+def synchronous_apply_required(scenario) -> bool:
+    return scenario.rpo_lost_writes_max == 0
+
+
+def disable_synchronous_apply_sql() -> str:
+    return """
+SET synchronous_commit = local;
+ALTER SYSTEM SET synchronous_commit = 'on';
+ALTER SYSTEM RESET synchronous_standby_names;
+SELECT pg_reload_conf();
+"""
+
+
+def enable_synchronous_apply_sql() -> str:
+    return """
+ALTER SYSTEM SET synchronous_standby_names = 'FIRST 1 (drill_products)';
+ALTER SYSTEM SET synchronous_commit = 'remote_apply';
+SELECT pg_reload_conf();
+"""
+
+
+def disable_synchronous_apply(stack: ComposeStack) -> None:
+    stack.psql(PRIMARY, disable_synchronous_apply_sql())
+
+
+def enable_synchronous_apply(stack: ComposeStack, timeout_seconds: float) -> None:
+    _wait_for_sync_state(stack, {"async", "potential", "sync", "quorum"}, timeout_seconds)
+    stack.psql(PRIMARY, enable_synchronous_apply_sql())
+    _wait_for_sync_state(stack, {"sync", "quorum"}, timeout_seconds)
+
+
+def _wait_for_sync_state(stack: ComposeStack, accepted: set[str], timeout_seconds: float) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_state = "no replication row"
+    while time.monotonic() < deadline:
+        rows = stack.psql(
+            PRIMARY,
+            f"SELECT sync_state FROM pg_stat_replication WHERE application_name = '{SYNC_APPLICATION}';",
+        )
+        states = [line.strip() for line in rows.splitlines() if line.strip()]
+        if any(state in accepted for state in states):
+            return
+        last_state = rows or "no replication row"
+        time.sleep(0.2)
+    expected = ", ".join(sorted(accepted))
+    raise StackError(
+        f"logical replication standby {SYNC_APPLICATION} was not {expected} "
+        f"within {timeout_seconds}s ({last_state})"
+    )
+
+
 def reset_subscription(stack: ComposeStack) -> None:
+    disable_synchronous_apply(stack)
     exists = stack.psql(
         SECONDARY,
         "SELECT count(*) FROM pg_subscription WHERE subname = 'drill_products';",
@@ -66,7 +119,8 @@ def subscription_sql(host: str) -> str:
         raise ValueError(f"replication host {host!r} is not a DNS name")
     return (
         "CREATE SUBSCRIPTION drill_products\n"
-        f"  CONNECTION 'host={host} port=5432 dbname=appdb user=appuser password=apppass'\n"
+        f"  CONNECTION 'host={host} port=5432 dbname=appdb user=appuser password=apppass "
+        f"application_name={SYNC_APPLICATION}'\n"
         "  PUBLICATION drill_products\n"
         "  WITH (copy_data = true, create_slot = true, enabled = true, slot_name = drill_products);\n"
     )
@@ -79,9 +133,13 @@ def create_subscription(stack: ComposeStack, host: str = "postgres-us") -> None:
 
 def wait_until_caught_up(stack: ComposeStack, run_index: int, timeout_seconds: float) -> str:
     token = f"drill-sync-r{run_index}-p1"
+    timeout_ms = max(1, int(timeout_seconds * 1000))
     stack.psql(
         PRIMARY,
-        f"INSERT INTO products (name, price, region) VALUES ('{token}', 1.00, 'us-east-1');",
+        f"""
+        SET statement_timeout = '{timeout_ms}ms';
+        INSERT INTO products (name, price, region) VALUES ('{token}', 1.00, 'us-east-1');
+        """,
     )
     deadline = time.monotonic() + timeout_seconds
     last_state = "subscription has not reported"

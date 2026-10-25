@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.resilience.annotation.Retryable;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Method;
 import java.sql.SQLTransientConnectionException;
@@ -37,5 +39,15 @@ class ProductRetryPolicyTest {
         assertEquals(500, retryable.delay());
         assertEquals(2, retryable.multiplier());
         assertEquals(4000, retryable.maxDelay());
+    }
+
+    @Test
+    void saveCommitsInsideTheMethodSoAFailedCreateCanDropItsGeneratedId() throws NoSuchMethodException {
+        Transactional transactional = ProductService.class
+                .getMethod("save", Product.class)
+                .getAnnotation(Transactional.class);
+
+        assertNotNull(transactional);
+        assertEquals(Propagation.NOT_SUPPORTED, transactional.propagation());
     }
 }
