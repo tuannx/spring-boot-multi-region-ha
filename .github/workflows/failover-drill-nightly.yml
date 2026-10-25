@@ -38,7 +38,7 @@ jobs:
 
       - name: Upload the drill report
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: failover-drill-report
           path: reports/failover-drill/
@@ -47,7 +47,7 @@ jobs:
 
       - name: Upload the main baseline
         if: always() && github.ref == 'refs/heads/main' && hashFiles('reports/failover-drill/baseline-eligible') != ''
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: failover-drill-baseline
           path: reports/failover-drill/drill-report.json
