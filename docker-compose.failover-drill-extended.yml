@@ -1,0 +1,37 @@
+# Nightly-only overlay. Pull-request drills do not load this file.
+# app-eu reaches postgres-us through Toxiproxy. postgres-eu.proxy is the EU
+# database itself, so failover lands on the local writer when the proxy stops.
+# app-us keeps the direct same-region connection.
+services:
+  postgres-us:
+    networks:
+      multiregion-net:
+        aliases:
+          - postgres-us.local
+          - postgres-us.direct
+
+  postgres-eu:
+    networks:
+      multiregion-net:
+        aliases:
+          - postgres-eu.local
+          - postgres-eu.proxy
+
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    container_name: multiregion-toxiproxy
+    ports:
+      - "8474:8474"
+    networks:
+      multiregion-net:
+        aliases:
+          - postgres-us.proxy
+
+  app-eu:
+    environment:
+      CLUSTER_INSTANCE_PATTERN: "?.proxy:5432"
+      ACTIVE_WRITER_DB_HOST: postgres-us.proxy
+      ACTIVE_WRITER_DB_PORT: "5432"
+    depends_on:
+      toxiproxy:
+        condition: service_started

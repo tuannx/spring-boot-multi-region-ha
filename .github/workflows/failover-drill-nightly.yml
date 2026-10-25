@@ -1,0 +1,69 @@
+name: Nightly failover drill
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: nightly-failover-drill-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Test failover drill calculations
+        working-directory: scripts
+        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces failover_drill.test_nightly
+
+      - name: Run the nightly failover drill
+        env:
+          FAILOVER_DRILL_PROFILE: nightly
+          FAILOVER_DRILL_REF: ${{ github.ref }}
+          FAILOVER_DRILL_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FAILOVER_DRILL_COMMIT_SHA: ${{ github.sha }}
+        run: ./scripts/failover-drill.sh
+
+      - name: Upload the drill report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: failover-drill-report
+          path: reports/failover-drill/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload the main baseline
+        if: always() && github.ref == 'refs/heads/main' && hashFiles('reports/failover-drill/baseline-eligible') != ''
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: failover-drill-baseline
+          path: reports/failover-drill/drill-report.json
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Open or update the tracking issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILOVER_DRILL_ISSUE_REPO: ${{ github.repository }}
+        run: ./scripts/failover-drill-nightly-issue.sh
+
+      - name: Publish the drill summary
+        if: always()
+        run: |
+          if [ -f reports/failover-drill/comment.md ]; then
+            cat reports/failover-drill/comment.md >> "$GITHUB_STEP_SUMMARY"
+          fi

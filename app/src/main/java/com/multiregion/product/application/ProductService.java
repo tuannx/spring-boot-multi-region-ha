@@ -10,6 +10,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.SQLTransientConnectionException;
@@ -67,7 +68,14 @@ public class ProductService {
      * Performs up to 5 total attempts with exponential backoff (500ms → 1s → 2s → 4s)
      * when the underlying connection fails during writer failover.
      * Total max wait: ~7.5s.
+     * <p>
+     * The catalog commit runs inside this method. A failed create can leave a
+     * generated id on the instance after the database rolls the insert back.
+     * {@code save} would then merge, and an update of a missing id still returns
+     * the instance. The id is cleared when the writer does not store that row,
+     * so the next attempt inserts it.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @Retryable(
         includes = {
             DataAccessResourceFailureException.class,
@@ -80,13 +88,30 @@ public class ProductService {
         maxDelay = 4000
     )
     public Product save(Product product) {
-        return dataRoute.write(() -> {
-            if (product.getRegion() == null || product.getRegion().isEmpty()) {
-                product.setRegion(awsRegion);
+        Long idBeforeAttempt = product.getId();
+        try {
+            return dataRoute.write(() -> {
+                if (product.getRegion() == null || product.getRegion().isEmpty()) {
+                    product.setRegion(awsRegion);
+                }
+                log.debug("Saving product: {} in region {}", product.getName(), product.getRegion());
+                return productCatalog.save(product);
+            });
+        } catch (RuntimeException failure) {
+            if (idBeforeAttempt == null && product.getId() != null && !writerStores(product.getId())) {
+                product.setId(null);
             }
-            log.debug("Saving product: {} in region {}", product.getName(), product.getRegion());
-            return productCatalog.save(product);
-        });
+            throw failure;
+        }
+    }
+
+    private boolean writerStores(Long id) {
+        try {
+            return dataRoute.write(() -> productCatalog.findById(id).isPresent());
+        } catch (RuntimeException lookupFailure) {
+            log.debug("Writer did not confirm product {}: {}", id, lookupFailure.toString());
+            return false;
+        }
     }
 
     /**
