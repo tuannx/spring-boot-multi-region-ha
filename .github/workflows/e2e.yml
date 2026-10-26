@@ -61,7 +61,7 @@ jobs:
 
       - name: Upload application test and QuickPerf measurements
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: application-test-reports
           path: |
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload acceptance evidence
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: acceptance-evidence
           path: reports/queue-takeover/
@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload application images
         if: success()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: stack-images
           path: reports/stack-images/images.tar.gz
@@ -147,7 +147,7 @@ jobs:
 
       - name: Upload the drill report
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: failover-drill-report
           path: reports/failover-drill/
@@ -156,7 +156,7 @@ jobs:
 
       - name: Upload OTLP traces
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: otlp-trace.json
           path: reports/failover-drill/otlp-trace.json
@@ -250,7 +250,7 @@ jobs:
 
       - name: Upload Floci acceptance evidence
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: floci-acceptance-evidence
           path: |
