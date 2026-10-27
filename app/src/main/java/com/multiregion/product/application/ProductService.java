@@ -6,6 +6,7 @@ import com.multiregion.product.port.ProductDataRoute;
 import com.multiregion.product.port.ProductRegionProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.resilience.annotation.Retryable;
@@ -42,14 +43,17 @@ public class ProductService {
     private final ProductCatalog productCatalog;
     private final ProductDataRoute dataRoute;
     private final String awsRegion;
+    private final boolean shardOwnershipEnforced;
 
     public ProductService(
             ProductCatalog productCatalog,
             ProductDataRoute dataRoute,
-            ProductRegionProvider regionProvider) {
+            ProductRegionProvider regionProvider,
+            @Value("${SHARD_OWNERSHIP_ENFORCED:false}") boolean shardOwnershipEnforced) {
         this.productCatalog = productCatalog;
         this.dataRoute = dataRoute;
         this.awsRegion = regionProvider.region();
+        this.shardOwnershipEnforced = shardOwnershipEnforced;
     }
 
     @Transactional(readOnly = true)
@@ -88,6 +92,7 @@ public class ProductService {
         maxDelay = 4000
     )
     public Product save(Product product) {
+        rejectForeignShard(product);
         Long idBeforeAttempt = product.getId();
         try {
             return dataRoute.write(() -> {
@@ -103,6 +108,17 @@ public class ProductService {
             }
             throw failure;
         }
+    }
+
+    private void rejectForeignShard(Product product) {
+        if (!shardOwnershipEnforced) {
+            return;
+        }
+        String requested = product.getRegion();
+        if (requested == null || requested.isBlank() || requested.equalsIgnoreCase(awsRegion)) {
+            return;
+        }
+        throw new ShardOwnershipConflict(awsRegion, requested);
     }
 
     private boolean writerStores(Long id) {

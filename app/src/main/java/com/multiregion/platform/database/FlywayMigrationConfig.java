@@ -1,6 +1,7 @@
 package com.multiregion.platform.database;
 
 import com.multiregion.platform.config.MultiRegionConfig;
+import com.multiregion.platform.topology.HomeRegion;
 import org.springframework.boot.flyway.autoconfigure.FlywayConfigurationCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,8 +22,9 @@ public class FlywayMigrationConfig {
     @Bean
     public FlywayConfigurationCustomizer flywayRegionPlaceholders(
             MultiRegionConfig multiRegionConfig) {
-        Map<String, String> placeholders =
-                RegionPlaceholders.forRegion(multiRegionConfig.awsRegion()).asMap();
+        Map<String, String> placeholders = RegionPlaceholders
+                .forRegion(multiRegionConfig.awsRegion(), multiRegionConfig.shardWriterMode())
+                .asMap();
         return configuration -> configuration.placeholders(placeholders);
     }
 
@@ -38,20 +40,25 @@ public class FlywayMigrationConfig {
             String regionalProductPrice) {
 
         static RegionPlaceholders forRegion(String awsRegion) {
+            return forRegion(awsRegion, false);
+        }
+
+        static RegionPlaceholders forRegion(String awsRegion, boolean shardWriter) {
             if (awsRegion == null) {
                 throw new IllegalArgumentException(
                         "AWS region must be set to resolve migration placeholders");
             }
-            return switch (awsRegion) {
-                case "us-east-1" -> new RegionPlaceholders(
-                        "postgres-us", "postgres-eu", "10", "8",
-                        "us-east-1", "TRUE", "Regional Product US", "19.99");
-                case "eu-west-1" -> new RegionPlaceholders(
-                        "postgres-eu", "postgres-us", "8", "10",
-                        "eu-west-1", "FALSE", "Regional Product EU", "39.99");
-                default -> throw new IllegalArgumentException(
-                        "Unsupported AWS region for database migration: " + awsRegion);
-            };
+            HomeRegion region = HomeRegion.require(awsRegion);
+            String writerMode = shardWriter || region.homeWriter() ? "TRUE" : "FALSE";
+            return new RegionPlaceholders(
+                    region.databaseHost(),
+                    region.peerHost(),
+                    region.cpu(),
+                    region.peerCpu(),
+                    region.id(),
+                    writerMode,
+                    region.seedProductName(),
+                    region.seedProductPrice());
         }
 
         Map<String, String> asMap() {

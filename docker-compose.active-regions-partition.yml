@@ -1,0 +1,10 @@
+# Nightly partition-2-2 overlay. Cross-pair logical replication dials toxiproxy;
+# each region's synchronous standby stays on the direct pair hostname.
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    container_name: multiregion-toxiproxy
+    ports:
+      - "8474:8474"
+    networks:
+      - active-regions-net

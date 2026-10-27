@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 
 import static io.servicetalk.http.api.HttpResponseStatus.BAD_GATEWAY;
@@ -33,8 +34,7 @@ public final class LocalityPriorityRouter {
     private static final CharSequence HEADER_ROUTED_PRIORITY = "X-Routed-Priority";
     private static final CharSequence HEADER_FAILOVER = "X-Failover";
 
-    private final RegionEndpoint usEndpoint;
-    private final RegionEndpoint euEndpoint;
+    private final List<RegionEndpoint> endpoints;
     private final int outlierFailureThreshold;
     private final long outlierCooldownMillis;
     private final Duration requestTimeout;
@@ -43,7 +43,7 @@ public final class LocalityPriorityRouter {
                                   RegionEndpoint euEndpoint,
                                   int outlierFailureThreshold,
                                   long outlierCooldownMillis) {
-        this(usEndpoint, euEndpoint, outlierFailureThreshold, outlierCooldownMillis, Duration.ofMillis(800));
+        this(List.of(usEndpoint, euEndpoint), outlierFailureThreshold, outlierCooldownMillis, Duration.ofMillis(800));
     }
 
     public LocalityPriorityRouter(RegionEndpoint usEndpoint,
@@ -51,8 +51,17 @@ public final class LocalityPriorityRouter {
                                   int outlierFailureThreshold,
                                   long outlierCooldownMillis,
                                   Duration requestTimeout) {
-        this.usEndpoint = Objects.requireNonNull(usEndpoint, "usEndpoint");
-        this.euEndpoint = Objects.requireNonNull(euEndpoint, "euEndpoint");
+        this(List.of(usEndpoint, euEndpoint), outlierFailureThreshold, outlierCooldownMillis, requestTimeout);
+    }
+
+    public LocalityPriorityRouter(List<RegionEndpoint> endpoints,
+                                  int outlierFailureThreshold,
+                                  long outlierCooldownMillis,
+                                  Duration requestTimeout) {
+        if (endpoints == null || endpoints.isEmpty()) {
+            throw new IllegalArgumentException("endpoints");
+        }
+        this.endpoints = List.copyOf(endpoints);
         this.outlierFailureThreshold = outlierFailureThreshold;
         this.outlierCooldownMillis = outlierCooldownMillis;
         this.requestTimeout = Objects.requireNonNull(requestTimeout, "requestTimeout");
@@ -62,64 +71,43 @@ public final class LocalityPriorityRouter {
         return streamingRequest.toRequest().flatMap(request -> {
             final CharSequence sourceRegionHeader = request.headers().get(HEADER_SOURCE_REGION);
             final String sourceRegion = sourceRegionHeader != null ? sourceRegionHeader.toString() : "us-east-1";
-
-            // Determine P0 (Primary) and P1 (Secondary) based on requested source region
-            final RegionEndpoint primary;
-            final RegionEndpoint secondary;
-            if ("eu-west-1".equalsIgnoreCase(sourceRegion)) {
-                primary = euEndpoint;
-                secondary = usEndpoint;
-            } else {
-                primary = usEndpoint;
-                secondary = euEndpoint;
-            }
-
-            if (primary.isHealthy()) {
-                return dispatchToEndpoint(primary, request)
-                        .flatMap(response -> {
-                            if (isServerFailure(response.status())) {
-                                primary.recordFailure(outlierFailureThreshold, outlierCooldownMillis);
-                                LOGGER.warn("Primary endpoint {} returned {}, fast-failing over to secondary {}",
-                                        primary.regionName(), response.status(), secondary.regionName());
-                                return dispatchToEndpoint(secondary, request)
-                                        .map(failoverResponse -> applyMetadataHeaders(failoverResponse, secondary.regionName(), "P1", true));
-                            }
-                            primary.recordSuccess();
-                            return Single.succeeded(applyMetadataHeaders(response, primary.regionName(), "P0", false));
-                        })
-                        .onErrorResume(error -> {
-                            primary.recordFailure(outlierFailureThreshold, outlierCooldownMillis);
-                            LOGGER.warn("Primary endpoint {} failed ({}), immediately failing over to secondary {}",
-                                    primary.regionName(), error.getMessage(), secondary.regionName());
-                            return dispatchToEndpoint(secondary, request)
-                                    .map(failoverResponse -> applyMetadataHeaders(failoverResponse, secondary.regionName(), "P1", true))
-                                    .onErrorResume(secondError -> {
-                                        secondary.recordFailure(outlierFailureThreshold, outlierCooldownMillis);
-                                        LOGGER.error("Both primary ({}) and secondary ({}) endpoints failed!",
-                                                primary.regionName(), secondary.regionName(), secondError);
-                                        StreamingHttpResponse errorResponse = responseFactory.serviceUnavailable();
-                                        errorResponse.headers().set(HEADER_ROUTER_BACKEND, "servicetalk");
-                                        return Single.succeeded(errorResponse);
-                                    });
-                        });
-            } else {
-                // Primary is already known to be an outlier: route directly to secondary with zero latency penalty
-                LOGGER.info("Primary endpoint {} is an active outlier; routing directly to secondary {}",
-                        primary.regionName(), secondary.regionName());
-                return dispatchToEndpoint(secondary, request)
-                        .map(response -> {
-                            secondary.recordSuccess();
-                            return applyMetadataHeaders(response, secondary.regionName(), "P1", true);
-                        })
-                        .onErrorResume(error -> {
-                            secondary.recordFailure(outlierFailureThreshold, outlierCooldownMillis);
-                            LOGGER.error("Secondary endpoint {} also failed while primary was an outlier!", secondary.regionName(), error);
-                            StreamingHttpResponse errorResponse = responseFactory.serviceUnavailable();
-                            errorResponse.headers().set(HEADER_ROUTER_BACKEND, "servicetalk");
-                            return Single.succeeded(errorResponse);
-                        });
-            }
+            List<RegionEndpoint> ordered = RegionOrder.forSource(sourceRegion, endpoints);
+            return dispatchInOrder(ordered, 0, request, responseFactory);
         });
+    }
+
+    private Single<StreamingHttpResponse> dispatchInOrder(List<RegionEndpoint> ordered,
+                                                          int index,
+                                                          HttpRequest request,
+                                                          StreamingHttpResponseFactory responseFactory) {
+        if (index >= ordered.size()) {
+            StreamingHttpResponse errorResponse = responseFactory.serviceUnavailable();
+            errorResponse.headers().set(HEADER_ROUTER_BACKEND, "servicetalk");
+            return Single.succeeded(errorResponse);
+        }
+        RegionEndpoint endpoint = ordered.get(index);
+        if (!endpoint.isHealthy()) {
+            return dispatchInOrder(ordered, index + 1, request, responseFactory);
+        }
+        String priority = "P" + index;
+        boolean failover = index > 0;
+        return dispatchToEndpoint(endpoint, request)
+                .flatMap(response -> {
+                    if (isServerFailure(response.status())) {
+                        endpoint.recordFailure(outlierFailureThreshold, outlierCooldownMillis);
+                        LOGGER.warn("Endpoint {} returned {}, trying the next region",
+                                endpoint.regionName(), response.status());
+                        return dispatchInOrder(ordered, index + 1, request, responseFactory);
+                    }
+                    endpoint.recordSuccess();
+                    return Single.succeeded(applyMetadataHeaders(response, endpoint.regionName(), priority, failover));
+                })
+                .onErrorResume(error -> {
+                    endpoint.recordFailure(outlierFailureThreshold, outlierCooldownMillis);
+                    LOGGER.warn("Endpoint {} failed ({}), trying the next region",
+                            endpoint.regionName(), error.getMessage());
+                    return dispatchInOrder(ordered, index + 1, request, responseFactory);
+                });
     }
 
     private Single<StreamingHttpResponse> dispatchToEndpoint(RegionEndpoint endpoint, HttpRequest request) {

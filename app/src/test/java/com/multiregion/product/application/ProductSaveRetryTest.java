@@ -47,8 +47,33 @@ class ProductSaveRetryTest {
         assertEquals(List.of("drill-r1-w1-n000002"), catalog.storedNames());
     }
 
+    @Test
+    void enforcedOwnershipRejectsAForeignShardAndLeavesTheCatalogUntouched() {
+        Catalog catalog = new Catalog();
+        ProductService service = new ProductService(catalog, new DirectRoute(), () -> "eu-west-1", true);
+        Product product = new Product("foreign-shard", new BigDecimal("1.00"), "us-east-1");
+
+        ShardOwnershipConflict conflict = assertThrows(ShardOwnershipConflict.class, () -> service.save(product));
+
+        assertEquals("eu-west-1", conflict.ownerRegion());
+        assertEquals("us-east-1", conflict.requestedRegion());
+        assertEquals(List.of(), catalog.storedNames());
+    }
+
+    @Test
+    void enforcedOwnershipStampsAnEmptyRegionWithTheHomeWriter() {
+        Catalog catalog = new Catalog();
+        ProductService service = new ProductService(catalog, new DirectRoute(), () -> "ap-southeast-1", true);
+        Product product = new Product("home-shard", new BigDecimal("1.00"), null);
+
+        Product saved = service.save(product);
+
+        assertEquals("ap-southeast-1", saved.getRegion());
+        assertEquals(List.of("home-shard"), catalog.storedNames());
+    }
+
     private static ProductService service(Catalog catalog) {
-        return new ProductService(catalog, new DirectRoute(), () -> "eu-west-1");
+        return new ProductService(catalog, new DirectRoute(), () -> "eu-west-1", false);
     }
 
     private static final class DirectRoute implements ProductDataRoute {

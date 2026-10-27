@@ -37,6 +37,8 @@ def _gates() -> DrillGates:
         rpo_regression_min_delta_seconds=0.5,
         error_count_regression_min_delta=2,
         regression_metrics=("rto_seconds", "rpo_seconds", "error_count"),
+        write_conflicts_max=0,
+        convergence_lag_seconds_max=15,
     )
 
 
@@ -383,6 +385,8 @@ def _run(
         "duplicate_writes": duplicates,
         "error_count": errors,
         "p99_latency_ms": p99,
+        "write_conflicts": 0,
+        "convergence_lag_seconds": 0.0,
         "driver_failover_verified": True,
     }
 

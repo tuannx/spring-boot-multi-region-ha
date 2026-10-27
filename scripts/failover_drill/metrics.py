@@ -77,6 +77,35 @@ def duplicate_writes(name_counts: dict[str, int]) -> int:
     return sum(count - 1 for count in name_counts.values() if count > 1)
 
 
+def write_conflicts(
+    rows_by_database: dict[str, list[tuple[str, str, str]]],
+    rejected_writes: int,
+) -> int:
+    variants: dict[str, set[tuple[str, str]]] = {}
+    for rows in rows_by_database.values():
+        for name, region, price in rows:
+            variants.setdefault(name, set()).add((region, price))
+    divergent = sum(1 for found in variants.values() if len(found) > 1)
+    return divergent + rejected_writes
+
+
+def slowest_recovery_seconds(
+    attempts: list[Attempt],
+    fault_ms: int,
+    eligible_start_ms: int,
+    groups: list[set[str]],
+) -> float | None:
+    if not groups:
+        return None
+    samples: list[float] = []
+    for group in groups:
+        recovered = recovery_time_seconds(attempts, fault_ms, eligible_start_ms, group)
+        if recovered is None:
+            return None
+        samples.append(recovered)
+    return max(samples)
+
+
 def window_end_ms(
     attempts: list[Attempt],
     fault_ms: int,
@@ -224,6 +253,22 @@ def metric_delta(
     }
 
 
+def _fail_limit(failures: list[str], aggregate: dict, runs: list[dict], name: str, limit: float) -> None:
+    if name not in aggregate:
+        return
+    value = aggregate.get(name)
+    if value is None or float(value) > float(limit):
+        failures.append(
+            f"{name} {value} exceeds {limit}" if value is not None else f"{name} is missing"
+        )
+    for run in runs:
+        if name not in run:
+            continue
+        run_value = run.get(name)
+        if run_value is None or (isinstance(run_value, (int, float)) and float(run_value) > float(limit)):
+            failures.append(f"run {run.get('index')} {name} {run_value} exceeds {limit}")
+
+
 def _fail_count(failures: list[str], aggregate: dict, runs: list[dict], name: str, limit: int) -> None:
     value = aggregate.get(name)
     if value is None or value > limit:
@@ -275,7 +320,12 @@ def evaluate_gate(
     for run in runs:
         if run.get("rto_seconds") is None:
             failures.append(f"run {run['index']} produced no recovered write")
-        if not run.get("driver_failover_verified"):
+        if run.get("verification") == "active-region-routing":
+            if not run.get("driver_failover_verified"):
+                failures.append(
+                    f"run {run['index']} did not recover routed traffic on a live home writer"
+                )
+        elif not run.get("driver_failover_verified"):
             failures.append(f"run {run['index']} did not verify driver failover onto postgres-eu")
 
     rto = aggregate.get("rto_seconds")
@@ -294,6 +344,8 @@ def evaluate_gate(
         )
     _fail_count(failures, aggregate, runs, "rpo_lost_writes", gates.rpo_lost_writes_max)
     _fail_count(failures, aggregate, runs, "duplicate_writes", gates.duplicate_writes_max)
+    _fail_limit(failures, aggregate, runs, "write_conflicts", gates.write_conflicts_max)
+    _fail_limit(failures, aggregate, runs, "convergence_lag_seconds", gates.convergence_lag_seconds_max)
 
     if baseline_aggregate is not None:
         min_deltas = gates.regression_min_deltas()

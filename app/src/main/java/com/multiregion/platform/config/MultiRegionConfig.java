@@ -93,6 +93,14 @@ public record MultiRegionConfig(PklApplicationConfig pkl, Environment environmen
         return intProperty("FAILOVER_FAILURE_THRESHOLD", Math.toIntExact(pkl.getFAILOVER_FAILURE_THRESHOLD()));
     }
 
+    public boolean shardWriterMode() {
+        return environment.getProperty("SHARD_WRITER_MODE", Boolean.class, false);
+    }
+
+    public boolean shardOwnershipEnforced() {
+        return environment.getProperty("SHARD_OWNERSHIP_ENFORCED", Boolean.class, false);
+    }
+
     public boolean allowUnfencedPromotion() {
         return environment.getProperty(
                 "FAILOVER_ALLOW_UNFENCED_PROMOTION",

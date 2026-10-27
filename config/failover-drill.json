@@ -28,7 +28,12 @@
       "jitter_ms": 0,
       "toxicity": 1,
       "rpo_seconds_max": 0,
-      "rpo_lost_writes_max": 0
+      "rpo_lost_writes_max": 0,
+      "topology": "single-writer",
+      "iterations": null,
+      "killed_regions": [],
+      "write_conflicts_max": 0,
+      "convergence_lag_seconds_max": 0
     },
     {
       "name": "network-partition",
@@ -40,7 +45,12 @@
       "jitter_ms": 0,
       "toxicity": 1,
       "rpo_seconds_max": 0,
-      "rpo_lost_writes_max": 0
+      "rpo_lost_writes_max": 0,
+      "topology": "single-writer",
+      "iterations": null,
+      "killed_regions": [],
+      "write_conflicts_max": 0,
+      "convergence_lag_seconds_max": 0
     },
     {
       "name": "slow-db",
@@ -52,7 +62,63 @@
       "jitter_ms": 0,
       "toxicity": 1,
       "rpo_seconds_max": 2,
-      "rpo_lost_writes_max": 4
+      "rpo_lost_writes_max": 4,
+      "topology": "single-writer",
+      "iterations": null,
+      "killed_regions": [],
+      "write_conflicts_max": 0,
+      "convergence_lag_seconds_max": 2
+    },
+    {
+      "name": "lose-1-of-4",
+      "profiles": ["nightly"],
+      "fault": "kill-regions",
+      "replication_host": "postgres-apne1",
+      "compose_overlay": null,
+      "latency_ms": 0,
+      "jitter_ms": 0,
+      "toxicity": 1,
+      "rpo_seconds_max": 0,
+      "rpo_lost_writes_max": 0,
+      "topology": "active-regions",
+      "iterations": 1,
+      "killed_regions": ["ap-southeast-1"],
+      "write_conflicts_max": 0,
+      "convergence_lag_seconds_max": 15
+    },
+    {
+      "name": "lose-2-of-4",
+      "profiles": ["nightly"],
+      "fault": "kill-regions",
+      "replication_host": "postgres-us",
+      "compose_overlay": null,
+      "latency_ms": 0,
+      "jitter_ms": 0,
+      "toxicity": 1,
+      "rpo_seconds_max": 0,
+      "rpo_lost_writes_max": 0,
+      "topology": "active-regions",
+      "iterations": 1,
+      "killed_regions": ["eu-west-1", "ap-northeast-1"],
+      "write_conflicts_max": 0,
+      "convergence_lag_seconds_max": 15
+    },
+    {
+      "name": "partition-2-2",
+      "profiles": ["nightly"],
+      "fault": "split-pairs",
+      "replication_host": "toxiproxy",
+      "compose_overlay": "docker-compose.active-regions-partition.yml",
+      "latency_ms": 0,
+      "jitter_ms": 0,
+      "toxicity": 1,
+      "rpo_seconds_max": 0,
+      "rpo_lost_writes_max": 0,
+      "topology": "active-regions",
+      "iterations": 1,
+      "killed_regions": [],
+      "write_conflicts_max": 0,
+      "convergence_lag_seconds_max": 15
     }
   ],
   "gates": {
@@ -64,6 +130,8 @@
     "rto_regression_min_delta_seconds": 1.0,
     "rpo_regression_min_delta_seconds": 0.5,
     "error_count_regression_min_delta": 2,
+    "write_conflicts_max": 0,
+    "convergence_lag_seconds_max": 0,
     "regression_metrics": [
       "rto_seconds",
       "rpo_seconds",

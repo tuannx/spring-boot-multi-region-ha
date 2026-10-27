@@ -25,11 +25,11 @@ DB_PASS: String = "apppass"
 
 DB_NAME: String = "appdb"
 
-AWS_REGION: "us-east-1" | "eu-west-1" = "us-east-1"
+AWS_REGION: "us-east-1" | "eu-west-1" | "ap-southeast-1" | "ap-northeast-1" = "us-east-1"
 
 REGION_ROLE: "primary" | "secondary" = "primary"
 
-FAILOVER_HOME_REGION: "us-east-1" | "eu-west-1" = "us-east-1"
+FAILOVER_HOME_REGION: "us-east-1" | "eu-west-1" | "ap-southeast-1" | "ap-northeast-1" = "us-east-1"
 
 ACTIVE_HOME_FAILOVER_MODE: "strict-writer" | "home-reader-or-writer" = "strict-writer"
 

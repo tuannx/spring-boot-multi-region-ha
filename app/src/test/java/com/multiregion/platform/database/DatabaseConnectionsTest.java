@@ -63,6 +63,16 @@ class DatabaseConnectionsTest {
     }
 
     @Test
+    void blankLocalHostForApSoutheastResolvesToThatRegionsDatabase() {
+        DatabaseConnections config = config("ap-southeast-1", "primary", "  ", 5432);
+
+        try (HikariDataSource dataSource = (HikariDataSource) config.localAdminDataSource()) {
+            assertThat(dataSource.getJdbcUrl())
+                    .isEqualTo("jdbc:aws-wrapper:postgresql://postgres-apse1:5432/appdb");
+        }
+    }
+
+    @Test
     void primaryProbePoolTargetsActiveWriterThroughWrapperWithBoundedTimeouts() {
         DatabaseConnections config = config("eu-west-1", "secondary", "eu-local-db", 6543);
 

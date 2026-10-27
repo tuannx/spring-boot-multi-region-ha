@@ -24,7 +24,7 @@ jobs:
 
       - name: Test failover drill calculations
         working-directory: scripts
-        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces failover_drill.test_nightly
+        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces failover_drill.test_nightly failover_drill.test_active_regions
 
       - name: Set up Java 21
         uses: actions/setup-java@v6
@@ -58,6 +58,12 @@ jobs:
 
       - name: Validate ElastiCache Global (Valkey) case Compose model
         run: docker compose -f cases/elasticache-global/docker-compose.yml config --quiet
+
+      - name: Validate four-region compose models
+        run: |
+          docker compose -f docker-compose.active-regions.yml config --quiet
+          docker compose -f docker-compose.active-regions.yml -f docker-compose.active-regions-partition.yml config --quiet
+          docker compose -f docker-compose.floci.yml -f docker-compose.floci-active-regions.yml config --quiet
 
       - name: Upload application test and QuickPerf measurements
         if: always()
@@ -120,7 +126,7 @@ jobs:
 
       - name: Test failover drill calculations
         working-directory: scripts
-        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces failover_drill.test_nightly
+        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces failover_drill.test_nightly failover_drill.test_active_regions
 
       - name: Download application images
         continue-on-error: true

@@ -553,6 +553,8 @@ The measured results table is rendered from `drill-report.json` by the same func
 | Duplicate writes | — | — | n/a |
 | Errors during switchover | — | — | n/a |
 | p99 latency during switchover (ms) | — | — | n/a |
+| Write conflicts | — | — | n/a |
+| Convergence lag (s) | — | — | n/a |
 
 | Field | Meaning |
 | --- | --- |
@@ -562,13 +564,15 @@ The measured results table is rendered from `drill-report.json` by the same func
 | `duplicate_writes` | Extra `products` rows for the same drill name. Server retries during the switch can insert the same name twice. |
 | `error_count` | Write responses that are not HTTP 201 and overlap the window from the kill until the recovered write. |
 | `p99_latency_ms` | Nearest-rank p99 of write latencies in that window. It is reported and has no absolute pass/fail limit. |
+| `write_conflicts` | Product names whose region and price differ across databases, plus HTTP 409 shard rejections. The single-writer drill records 0. |
+| `convergence_lag_seconds` | On the single-writer drill this equals rpo_seconds. On the four-region drill it is the seconds from a probe commit on each live home writer until every live subscriber has applied it. |
 | `fault_injected_at` | UTC time immediately before `docker kill` of `multiregion-us`. |
 | `writer_switched_at` | UTC time when `postgres-eu` has accepted writer mode. |
 | `commit_sha` | Git commit the drill measured. |
 | `run_count` | Number of independent iterations stored in the report. |
 | `config_sha256` | SHA-256 of the canonical failover drill config JSON. |
 
-Thresholds from `config/failover-drill.json`: RTO ≤ 60s, RPO ≤ 0s, rpo_lost_writes ≤ 0, duplicate_writes ≤ 0, regression ≤ 20% on rto_seconds, rpo_seconds, error_count. An RTO regression also has to increase by at least 1.0s, an RPO regression by at least 0.5s, and an error-count regression by at least 2.
+Thresholds from `config/failover-drill.json`: RTO ≤ 60s, RPO ≤ 0s, rpo_lost_writes ≤ 0, duplicate_writes ≤ 0, write_conflicts ≤ 0, convergence_lag_seconds ≤ 0s, regression ≤ 20% on rto_seconds, rpo_seconds, error_count. An RTO regression also has to increase by at least 1.0s, an RPO regression by at least 0.5s, and an error-count regression by at least 2.
 <!-- failover-drill-readme:end -->
 
 `aggregate` is the median of the runs named by `run_count`. A run that never writes again fails the gate rather than being dropped from the median. A single run whose `rpo_lost_writes` or `duplicate_writes` is above the limit fails even when the median count is inside it. `rpo_seconds` stays beside that count: a write acknowledged after the kill can be a lost write and still add zero seconds.
@@ -581,11 +585,23 @@ CI runs the `failover-drill` job in [`.github/workflows/e2e.yml`](.github/workfl
 
 Pull requests keep the absolute limits and, when a baseline exists, the regression comparison. p99 stays out of the regression list. When the artifact is missing or expired, the comment says regression was skipped and the absolute RTO, RPO, lost-write, and duplicate-write limits still apply.
 
-The baseline is no longer uploaded by the pull-request workflow. [`.github/workflows/failover-drill-nightly.yml`](.github/workflows/failover-drill-nightly.yml) runs on `main` every day at 06:00 UTC, and on `workflow_dispatch`, on a free `ubuntu-latest` runner. It runs `./scripts/failover-drill.sh` with `FAILOVER_DRILL_PROFILE=nightly`. That profile repeats the `primary-kill` drill above and then runs two scenarios the pull-request job does not run: `network-partition` disables a Toxiproxy listener on the EU-to-US database path, and `slow-db` adds a fixed 200 ms Toxiproxy latency with jitter 0 and leaves that delay in place through the same primary kill and failover. Lost writes are expected in `slow-db` because the acknowledgement can return after the kill. That scenario does not use synchronous apply. Each scenario declares `rpo_seconds_max` and `rpo_lost_writes_max`. `primary-kill` and `network-partition` set both to 0 and wait until the replica applies a commit before it is acknowledged. `slow-db` sets `rpo_seconds_max` to 2 and `rpo_lost_writes_max` to 4, one in-flight acknowledgement per write worker. Each scenario records `rto_seconds`, `rpo_seconds`, `rpo_lost_writes`, `duplicate_writes`, `error_count`, `p99_latency_ms`, `fault_injected_at`, `writer_switched_at`, `commit_sha`, `run_count`, and `config_sha256`.
+The baseline is no longer uploaded by the pull-request workflow. [`.github/workflows/failover-drill-nightly.yml`](.github/workflows/failover-drill-nightly.yml) runs on `main` every day at 06:00 UTC, and on `workflow_dispatch`, on a free `ubuntu-latest` runner. It runs `./scripts/failover-drill.sh` with `FAILOVER_DRILL_PROFILE=nightly`. That profile repeats the `primary-kill` drill above and then runs scenarios the pull-request job does not run: `network-partition` disables a Toxiproxy listener on the EU-to-US database path, and `slow-db` adds a fixed 200 ms Toxiproxy latency with jitter 0 and leaves that delay in place through the same primary kill and failover. The same profile then runs `lose-1-of-4`, `lose-2-of-4`, and `partition-2-2` on the four-region stack. Those three scenarios are nightly-only. Lost writes are expected in `slow-db` because the acknowledgement can return after the kill. That scenario does not use synchronous apply. Each scenario declares `rpo_seconds_max` and `rpo_lost_writes_max`. `primary-kill` and `network-partition` set both to 0 and wait until the replica applies a commit before it is acknowledged. `slow-db` sets `rpo_seconds_max` to 2 and `rpo_lost_writes_max` to 4, one in-flight acknowledgement per write worker. Each scenario records `rto_seconds`, `rpo_seconds`, `rpo_lost_writes`, `duplicate_writes`, `error_count`, `p99_latency_ms`, `write_conflicts`, `convergence_lag_seconds`, `fault_injected_at`, `writer_switched_at`, `commit_sha`, `run_count`, and `config_sha256`.
 
 These numbers are a local mock (containers + Toxiproxy), not real Aurora Global.
 
-A passing `primary-kill` on a nightly run of `main` is stored as `failover-drill-baseline` for 90 days, including when an extended scenario fails, so the pull-request regression gate still has a baseline. A manual run of another branch does not publish that baseline. The nightly job going red does not fail pull requests. A failure opens or updates one issue titled `[DR] Nightly failover drill`; a later pass closes it. Design trade-offs are in [docs/adr/0001-failover-drill.md](docs/adr/0001-failover-drill.md) and [docs/adr/0002-nightly-failover-drill.md](docs/adr/0002-nightly-failover-drill.md).
+A passing `primary-kill` on a nightly run of `main` is stored as `failover-drill-baseline` for 90 days, including when an extended scenario fails, so the pull-request regression gate still has a baseline. A manual run of another branch does not publish that baseline. The nightly job going red does not fail pull requests. A failure opens or updates one issue titled `[DR] Nightly failover drill`; a later pass closes it. Design trade-offs are in [docs/adr/0001-failover-drill.md](docs/adr/0001-failover-drill.md), [docs/adr/0002-nightly-failover-drill.md](docs/adr/0002-nightly-failover-drill.md), and [docs/adr/0003-home-region-sharding.md](docs/adr/0003-home-region-sharding.md).
+
+## Four home-region writers
+
+`docker-compose.active-regions.yml` starts four home writers: `us-east-1`, `eu-west-1`, `ap-southeast-1`, and `ap-northeast-1`. The default `docker compose up` path is unchanged and stays a single writer. Stop that stack before the active project. Both set the same container names, and the active project name is `active-regions`.
+
+```bash
+docker compose -p active-regions -f docker-compose.active-regions.yml up -d --build
+```
+
+The ServiceTalk router on port 8000 routes `X-Source-Region` to that region, then to its pair (`us-east-1` with `eu-west-1`, `ap-southeast-1` with `ap-northeast-1`). A pair that accepts a failed-over client writes a new key in its own shard. `SHARD_OWNERSHIP_ENFORCED=true` returns HTTP 409 when a body names another region. Each application still uses the AWS JDBC Wrapper as the writer selector inside its own database. Reads use `strict-writer`, so a killed pair is not a read target.
+
+Nightly `lose-1-of-4` kills `ap-southeast-1`. `lose-2-of-4` kills `eu-west-1` and `ap-northeast-1`. `partition-2-2` splits west (`us-east-1`, `eu-west-1`) from east (`ap-southeast-1`, `ap-northeast-1`) with Toxiproxy on the cross-pair subscriptions. The drill records `write_conflicts` and `convergence_lag_seconds` with RTO, RPO, lost writes, and p99. The conflict limit is 0. The convergence limit on those three scenarios is 15 seconds. Pull-request CI parses the compose files and does not start the four databases. Ports, sync standbys, and the Floci overlay are in [docs/active-regions.md](docs/active-regions.md).
 
 ## API Reference
 

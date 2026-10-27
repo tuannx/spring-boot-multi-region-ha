@@ -57,9 +57,16 @@ class NightlyConfigTest(unittest.TestCase):
         )
         self.assertEqual(
             tuple(scenario.name for scenario in select_scenarios(config, "nightly")),
-            ("primary-kill", "network-partition", "slow-db"),
+            (
+                "primary-kill",
+                "network-partition",
+                "slow-db",
+                "lose-1-of-4",
+                "lose-2-of-4",
+                "partition-2-2",
+            ),
         )
-        primary, partition, slow = config.scenarios
+        primary, partition, slow, lose_one, lose_two, split = config.scenarios
         self.assertIsNone(primary.compose_overlay)
         self.assertEqual(primary.fault, "docker-kill-primary")
         self.assertEqual(primary.replication_host, "postgres-us")
@@ -85,6 +92,15 @@ class NightlyConfigTest(unittest.TestCase):
         self.assertEqual(config.toxiproxy.image, "ghcr.io/shopify/toxiproxy:2.12.0")
         self.assertNotIn("pull-request", partition.profiles)
         self.assertNotIn("pull-request", slow.profiles)
+        self.assertEqual(lose_one.topology, "active-regions")
+        self.assertEqual(lose_one.killed_regions, ("ap-southeast-1",))
+        self.assertEqual(lose_two.killed_regions, ("eu-west-1", "ap-northeast-1"))
+        self.assertEqual(split.fault, "split-pairs")
+        self.assertEqual(split.compose_overlay, "docker-compose.active-regions-partition.yml")
+        self.assertFalse(split.uses_toxiproxy)
+        self.assertEqual(lose_one.iterations, 1)
+        self.assertEqual(lose_one.convergence_lag_seconds_max, 15)
+        self.assertEqual(scenario_gates(config, lose_one).write_conflicts_max, 0)
         overlay = (ROOT / "docker-compose.failover-drill-extended.yml").read_text(encoding="utf-8")
         self.assertIn(f"image: {config.toxiproxy.image}", overlay)
         self.assertIn("postgres-us.proxy", overlay)
@@ -271,6 +287,8 @@ class NightlyReportTest(unittest.TestCase):
         self.assertIn(MARKER, body)
         for name in ("primary-kill", "network-partition", "slow-db"):
             self.assertIn(f"### {name}", rendered)
+        self.assertIn("lose-1-of-4", rendered)
+        self.assertIn("partition-2-2", rendered)
         for field in (
             "rto_seconds",
             "rpo_seconds",
@@ -402,6 +420,8 @@ def _scenario(name: str, passed: bool, rto: float | None) -> dict:
             "duplicate_writes": 0,
             "error_count": 0,
             "p99_latency_ms": 10.0,
+            "write_conflicts": 0,
+            "convergence_lag_seconds": 0.0,
         },
         "baseline": {"aggregate": {"rto_seconds": 1.0}} if name == "primary-kill" else None,
         "deltas": {},

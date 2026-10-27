@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 
-from failover_drill.config import DISPLAY_METRICS, METRIC_PLACES, DrillConfig, DrillGates
+from failover_drill.config import DISPLAY_METRICS, METRIC_PLACES, OPTIONAL_BASELINE_METRICS, DrillConfig, DrillGates
 from failover_drill.metrics import evaluate_gate, median_metric, metric_delta
 
 MEASUREMENT_SCOPE = "local mock (containers + fault injection), not real Aurora Global"
@@ -36,6 +36,14 @@ FIELD_MEANINGS: tuple[tuple[str, str], ...] = (
     (
         "p99_latency_ms",
         "Nearest-rank p99 of write latencies in that window. It is reported and has no absolute pass/fail limit.",
+    ),
+    (
+        "write_conflicts",
+        "Product names whose region and price differ across databases, plus HTTP 409 shard rejections. The single-writer drill records 0.",
+    ),
+    (
+        "convergence_lag_seconds",
+        "On the single-writer drill this equals rpo_seconds. On the four-region drill it is the seconds from a probe commit on each live home writer until every live subscriber has applied it.",
     ),
     (
         "fault_injected_at",
@@ -218,6 +226,8 @@ def render_readme_section(config: DrillConfig) -> str:
     primary = next(scenario for scenario in config.scenarios if scenario.name == "primary-kill")
     gates["rpo_seconds_max"] = primary.rpo_seconds_max
     gates["rpo_lost_writes_max"] = primary.rpo_lost_writes_max
+    gates["write_conflicts_max"] = primary.write_conflicts_max
+    gates["convergence_lag_seconds_max"] = primary.convergence_lag_seconds_max
     lines.append(_threshold_sentence(gates))
     return "\n".join(lines) + "\n"
 
@@ -249,6 +259,10 @@ def _applied_gates(report: dict) -> dict:
                 gates["rpo_seconds_max"] = scenario["rpo_seconds_max"]
             if "rpo_lost_writes_max" in scenario:
                 gates["rpo_lost_writes_max"] = scenario["rpo_lost_writes_max"]
+            if "write_conflicts_max" in scenario:
+                gates["write_conflicts_max"] = scenario["write_conflicts_max"]
+            if "convergence_lag_seconds_max" in scenario:
+                gates["convergence_lag_seconds_max"] = scenario["convergence_lag_seconds_max"]
             break
     return gates
 
@@ -267,6 +281,8 @@ def _threshold_sentence(gates: dict) -> str:
         f"RPO ≤ {_threshold_text(gates.get('rpo_seconds_max'))}s, "
         f"rpo_lost_writes ≤ {_threshold_text(gates.get('rpo_lost_writes_max'))}, "
         f"duplicate_writes ≤ {gates.get('duplicate_writes_max')}, "
+        f"write_conflicts ≤ {_threshold_text(gates.get('write_conflicts_max'))}, "
+        f"convergence_lag_seconds ≤ {_threshold_text(gates.get('convergence_lag_seconds_max'))}s, "
         f"regression ≤ {float(gates.get('regression_ratio_max', 0)) * 100:.0f}% "
         f"on {metrics}. "
         "An RTO regression also has to increase by at least "
@@ -316,7 +332,7 @@ def load_baseline(path) -> dict | None:
     if not isinstance(aggregate, dict):
         raise ValueError(f"Baseline {path} has no aggregate")
     for name in METRIC_PLACES:
-        if name not in aggregate:
+        if name not in aggregate and name not in OPTIONAL_BASELINE_METRICS:
             raise ValueError(f"Baseline {path} is missing {name}")
     return {
         "commit_sha": payload.get("commit_sha"),
