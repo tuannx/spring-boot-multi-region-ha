@@ -238,3 +238,11 @@ After recovery: Full restore to Phase 1 topology.
   - Hoặc dùng `pg_terminate_backend` để force HikariCP reconnect
   - Hoặc dùng EFM plugin + cluster endpoint DNS (real Aurora)
 - **clusterTopologyRefreshRateMs**: Đã config 5000ms (5s) để tăng tốc detect topology change, nhưng failover2 vẫn cần connection failure để trigger re-route.
+
+---
+
+## Four home-region writers
+
+The scenarios above are the two-region lab. The four-region stack is `docker-compose.active-regions.yml` with project name `active-regions`. Each region commits its own shard. The router on port 8000 uses `X-Source-Region` and fails a dead region over to its pair. Pairs are `us-east-1`/`eu-west-1` and `ap-southeast-1`/`ap-northeast-1`.
+
+The nightly drill adds `lose-1-of-4`, `lose-2-of-4`, and `partition-2-2`. Limits and the sync-standby table are in [docs/active-regions.md](active-regions.md). The decision is [ADR 0003](adr/0003-home-region-sharding.md). Pull-request CI parses the compose files and does not start the four databases.

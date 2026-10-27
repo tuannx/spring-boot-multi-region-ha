@@ -1,0 +1,5 @@
+amends "PklApplicationConfig.pkl"
+
+AWS_REGION = "ap-southeast-1"
+REGION_ROLE = "primary"
+FAILOVER_HOME_REGION = "ap-southeast-1"

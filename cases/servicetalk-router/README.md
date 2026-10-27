@@ -31,6 +31,8 @@ The ServiceTalk Router is designed specifically for multi-region topologies:
   - `X-Router-Backend`: `servicetalk`
   - `X-Failover`: `true` or `false`
 
+`APSE1_ENDPOINT_HOST` and `APNE1_ENDPOINT_HOST` add `ap-southeast-1` and `ap-northeast-1`. Pairs are `us-east-1` with `eu-west-1`, and `ap-southeast-1` with `ap-northeast-1`. `X-Source-Region` selects that region, then its pair, then the remaining endpoints by priority. Leaving the Asia hosts unset keeps the two-region process.
+
 ---
 
 ## 2. Architecture Diagram

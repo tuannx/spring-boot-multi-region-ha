@@ -6,8 +6,19 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 PROFILES = ("pull-request", "nightly")
-FAULTS = ("docker-kill-primary", "toxiproxy-partition")
-SCENARIO_NAMES = ("primary-kill", "network-partition", "slow-db")
+FAULTS = ("docker-kill-primary", "toxiproxy-partition", "kill-regions", "split-pairs")
+TOPOLOGIES = ("single-writer", "active-regions")
+SCENARIO_NAMES = (
+    "primary-kill",
+    "network-partition",
+    "slow-db",
+    "lose-1-of-4",
+    "lose-2-of-4",
+    "partition-2-2",
+)
+ACTIVE_REGION_IDS = ("us-east-1", "eu-west-1", "ap-southeast-1", "ap-northeast-1")
+LOSE_ONE_REGIONS = ("ap-southeast-1",)
+LOSE_TWO_REGIONS = ("eu-west-1", "ap-northeast-1")
 _HOSTNAME = re.compile(r"[a-z0-9][a-z0-9.-]*")
 _LISTEN = re.compile(r"0\.0\.0\.0:[0-9]+")
 
@@ -18,9 +29,12 @@ DISPLAY_METRICS: tuple[tuple[str, str, int], ...] = (
     ("duplicate_writes", "Duplicate writes", 0),
     ("error_count", "Errors during switchover", 0),
     ("p99_latency_ms", "p99 latency during switchover (ms)", 1),
+    ("write_conflicts", "Write conflicts", 0),
+    ("convergence_lag_seconds", "Convergence lag (s)", 3),
 )
 
 METRIC_PLACES = {name: places for name, _label, places in DISPLAY_METRICS}
+OPTIONAL_BASELINE_METRICS = frozenset({"write_conflicts", "convergence_lag_seconds"})
 
 
 @dataclass(frozen=True)
@@ -34,6 +48,8 @@ class DrillGates:
     rpo_regression_min_delta_seconds: float
     error_count_regression_min_delta: int
     regression_metrics: tuple[str, ...]
+    write_conflicts_max: int
+    convergence_lag_seconds_max: float
 
     def regression_min_deltas(self) -> dict[str, float]:
         return {
@@ -64,10 +80,15 @@ class ScenarioConfig:
     toxicity: float
     rpo_seconds_max: float
     rpo_lost_writes_max: int
+    topology: str
+    iterations: int | None
+    killed_regions: tuple[str, ...]
+    write_conflicts_max: int
+    convergence_lag_seconds_max: float
 
     @property
     def uses_toxiproxy(self) -> bool:
-        return self.compose_overlay is not None
+        return self.topology == "single-writer" and self.compose_overlay is not None
 
 
 @dataclass(frozen=True)
@@ -128,6 +149,8 @@ def load_config(path: Path) -> DrillConfig:
         "rpo_regression_min_delta_seconds",
         "error_count_regression_min_delta",
         "regression_metrics",
+        "write_conflicts_max",
+        "convergence_lag_seconds_max",
     }
     unknown_gates = set(gates_payload) - gate_keys
     if unknown_gates:
@@ -159,6 +182,8 @@ def load_config(path: Path) -> DrillConfig:
         rpo_regression_min_delta_seconds=float(gates_payload["rpo_regression_min_delta_seconds"]),
         error_count_regression_min_delta=int(gates_payload["error_count_regression_min_delta"]),
         regression_metrics=regression_metrics,
+        write_conflicts_max=_require_int(gates_payload["write_conflicts_max"], "write_conflicts_max"),
+        convergence_lag_seconds_max=float(gates_payload["convergence_lag_seconds_max"]),
     )
     return DrillConfig(
         iterations=iterations,
@@ -184,6 +209,8 @@ def scenario_gates(config: DrillConfig, scenario: ScenarioConfig) -> DrillGates:
         config.gates,
         rpo_seconds_max=scenario.rpo_seconds_max,
         rpo_lost_writes_max=scenario.rpo_lost_writes_max,
+        write_conflicts_max=scenario.write_conflicts_max,
+        convergence_lag_seconds_max=scenario.convergence_lag_seconds_max,
     )
 
 
@@ -253,6 +280,11 @@ def _load_scenarios(payload: object) -> tuple[ScenarioConfig, ...]:
             "toxicity",
             "rpo_seconds_max",
             "rpo_lost_writes_max",
+            "topology",
+            "iterations",
+            "killed_regions",
+            "write_conflicts_max",
+            "convergence_lag_seconds_max",
         }
         _require_exact_keys(entry, keys, "scenario")
         name = str(entry["name"])
@@ -298,12 +330,27 @@ def _load_scenarios(payload: object) -> tuple[ScenarioConfig, ...]:
                 raise ValueError("slow-db rpo_lost_writes_max must be above zero")
         elif lost_max != 0 or rpo_seconds_max != 0:
             raise ValueError(f"Scenario {name} rpo_seconds_max and rpo_lost_writes_max must be 0")
+        topology = str(entry["topology"])
+        if topology not in TOPOLOGIES:
+            raise ValueError(f"Scenario {name} has unknown topology {topology}")
+        iterations = _optional_iterations(entry["iterations"], name)
+        killed_regions = _region_tuple(entry["killed_regions"], name)
+        conflicts_max = _require_int(entry["write_conflicts_max"], f"{name} write_conflicts_max")
+        if conflicts_max < 0:
+            raise ValueError(f"Scenario {name} write_conflicts_max must be >= 0")
+        lag_max = _require_number(entry["convergence_lag_seconds_max"], f"{name} convergence_lag_seconds_max")
+        if lag_max < 0:
+            raise ValueError(f"Scenario {name} convergence_lag_seconds_max must be >= 0")
         if name == "network-partition" and fault != "toxiproxy-partition":
             raise ValueError("network-partition must disable the Toxiproxy cross-region proxy")
         if name == "primary-kill" and (fault != "docker-kill-primary" or overlay is not None):
             raise ValueError("primary-kill must kill the primary container without a Toxiproxy overlay")
-        if name != "primary-kill" and overlay is None:
+        if topology == "single-writer" and name != "primary-kill" and overlay is None:
             raise ValueError(f"Scenario {name} requires the Toxiproxy compose overlay")
+        if topology == "active-regions":
+            _validate_active_scenario(name, profiles, fault, overlay, iterations, killed_regions, lost_max, rpo_seconds_max, conflicts_max, lag_max)
+        elif killed_regions:
+            raise ValueError(f"Scenario {name} does not kill a home region")
         if "pull-request" in profiles and name != "primary-kill":
             raise ValueError(f"Scenario {name} is nightly-only")
         scenarios.append(
@@ -318,14 +365,82 @@ def _load_scenarios(payload: object) -> tuple[ScenarioConfig, ...]:
                 toxicity=toxicity,
                 rpo_seconds_max=rpo_seconds_max,
                 rpo_lost_writes_max=lost_max,
+                topology=topology,
+                iterations=iterations,
+                killed_regions=killed_regions,
+                write_conflicts_max=conflicts_max,
+                convergence_lag_seconds_max=lag_max,
             )
         )
     names = tuple(scenario.name for scenario in scenarios)
     if names != SCENARIO_NAMES:
         raise ValueError(f"scenarios must be {list(SCENARIO_NAMES)} in that order")
-    if len({scenario.compose_overlay for scenario in scenarios if scenario.compose_overlay}) != 1:
+    single_writer_overlays = {
+        scenario.compose_overlay
+        for scenario in scenarios
+        if scenario.topology == "single-writer" and scenario.compose_overlay
+    }
+    if len(single_writer_overlays) != 1:
         raise ValueError("extended scenarios must share one compose overlay")
     return tuple(scenarios)
+
+
+def _validate_active_scenario(
+    name: str,
+    profiles: tuple[str, ...],
+    fault: str,
+    overlay: str | None,
+    iterations: int | None,
+    killed_regions: tuple[str, ...],
+    lost_max: int,
+    rpo_seconds_max: float,
+    conflicts_max: int,
+    lag_max: float,
+) -> None:
+    if profiles != ("nightly",):
+        raise ValueError(f"Scenario {name} is nightly-only")
+    if iterations != 3:
+        raise ValueError(f"Scenario {name} runs three iterations, the same count as the single-writer drill")
+    if lost_max != 0 or rpo_seconds_max != 0 or conflicts_max != 0:
+        raise ValueError(f"Scenario {name} keeps zero lost writes, zero RPO seconds, and zero write conflicts")
+    if lag_max <= 0:
+        raise ValueError(f"Scenario {name} convergence_lag_seconds_max must be above zero")
+    if name == "lose-1-of-4" and (fault != "kill-regions" or killed_regions != LOSE_ONE_REGIONS or overlay is not None):
+        raise ValueError("lose-1-of-4 kills ap-southeast-1 without a Toxiproxy overlay")
+    if name == "lose-2-of-4" and (fault != "kill-regions" or killed_regions != LOSE_TWO_REGIONS or overlay is not None):
+        raise ValueError("lose-2-of-4 kills eu-west-1 and ap-northeast-1 without a Toxiproxy overlay")
+    if name == "partition-2-2" and (
+        fault != "split-pairs" or killed_regions or overlay != "docker-compose.active-regions-partition.yml"
+    ):
+        raise ValueError("partition-2-2 splits west and east through the active-region Toxiproxy overlay")
+    if name not in {"lose-1-of-4", "lose-2-of-4", "partition-2-2"}:
+        raise ValueError(f"Scenario {name} is not an active-region scenario")
+
+
+def _optional_iterations(value: object, name: str) -> int | None:
+    if value is None:
+        return None
+    parsed = _require_int(value, f"{name} iterations")
+    if parsed < 1:
+        raise ValueError(f"{name} iterations must be at least 1")
+    return parsed
+
+
+def _region_tuple(value: object, name: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError(f"{name} killed_regions must be a list")
+    regions = tuple(str(region) for region in value)
+    if any(region not in ACTIVE_REGION_IDS for region in regions):
+        raise ValueError(f"{name} killed_regions must be a subset of {list(ACTIVE_REGION_IDS)}")
+    if len(regions) != len(set(regions)):
+        raise ValueError(f"{name} killed_regions must not repeat a region")
+    return regions
+
+
+def _require_number(value: object, name: str) -> float:
+    if type(value) not in (int, float) or isinstance(value, bool):
+        raise ValueError(f"{name} must be a number")
+    return float(value)
 
 
 def _require_exact_keys(payload: dict, keys: set[str], label: str) -> None:

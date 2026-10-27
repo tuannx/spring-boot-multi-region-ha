@@ -26,7 +26,7 @@ jobs:
 
       - name: Test failover drill calculations
         working-directory: scripts
-        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces failover_drill.test_nightly
+        run: python3 -m unittest failover_drill.test_metrics failover_drill.test_traces failover_drill.test_nightly failover_drill.test_active_regions
 
       - name: Run the nightly failover drill
         env:

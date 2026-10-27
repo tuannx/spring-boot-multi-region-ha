@@ -1,6 +1,7 @@
 package com.multiregion.product.web;
 
 import com.multiregion.product.application.ProductService;
+import com.multiregion.product.application.ShardOwnershipConflict;
 import com.multiregion.product.domain.Product;
 import io.github.resilience4j.bulkhead.BulkheadFullException;
 import org.springframework.http.HttpStatus;
@@ -60,5 +61,10 @@ public class ProductResource {
     public ResponseEntity<String> shedWriteLoad(BulkheadFullException rejected) {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .body("Write load shed: " + rejected.getMessage());
+    }
+
+    @ExceptionHandler(ShardOwnershipConflict.class)
+    public ResponseEntity<String> rejectForeignShard(ShardOwnershipConflict conflict) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(conflict.getMessage());
     }
 }

@@ -250,12 +250,20 @@ def _reader(
             return
 
 
-def _request(url: str, method: str, body: dict | None, timeout_seconds: float) -> int | None:
+def request_status(
+    url: str,
+    method: str,
+    body: dict | None,
+    timeout_seconds: float,
+    headers: dict[str, str] | None = None,
+) -> int | None:
     payload = None if body is None else json.dumps(body).encode("utf-8")
     request = urllib.request.Request(url, data=payload, method=method)
     request.add_header("Connection", "close")
     if payload is not None:
         request.add_header("Content-Type", "application/json")
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             response.read()
@@ -265,3 +273,7 @@ def _request(url: str, method: str, body: dict | None, timeout_seconds: float) -
         return exc.code
     except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
         return None
+
+
+def _request(url: str, method: str, body: dict | None, timeout_seconds: float) -> int | None:
+    return request_status(url, method, body, timeout_seconds)

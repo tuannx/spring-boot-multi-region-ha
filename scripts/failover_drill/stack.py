@@ -12,17 +12,28 @@ class StackError(RuntimeError):
 
 
 class ComposeStack:
-    def __init__(self, root: Path, overlay: str | None = None):
+    def __init__(
+        self,
+        root: Path,
+        overlay: str | None = None,
+        *,
+        project_name: str | None = None,
+        compose_files: list[str] | None = None,
+    ):
         self.root = root
         self.overlay = overlay
-        self.compose_files = [
-            "-f",
-            "docker-compose.yml",
-            "-f",
-            "docker-compose.failover-drill.yml",
-        ]
-        if overlay:
-            self.compose_files.extend(["-f", overlay])
+        self.project_name = project_name
+        if compose_files is None:
+            self.compose_files = [
+                "-f",
+                "docker-compose.yml",
+                "-f",
+                "docker-compose.failover-drill.yml",
+            ]
+            if overlay:
+                self.compose_files.extend(["-f", overlay])
+        else:
+            self.compose_files = compose_files
 
     def ensure_images(self) -> bool:
         eu = "multiregion-app-eu:latest"
@@ -45,7 +56,18 @@ class ComposeStack:
         ]
         if self.overlay:
             services = ["toxiproxy", *services]
+        self.up_services(services)
+
+    def up_services(self, services: list[str]) -> None:
         self._compose("up", "-d", "--remove-orphans", *services)
+
+    def stop_named(self, containers: list[str]) -> None:
+        if containers:
+            self._run(["docker", "stop", *containers], check=False)
+
+    def start_named(self, containers: list[str]) -> None:
+        if containers:
+            self._run(["docker", "start", *containers])
 
     def down(self) -> None:
         self._compose("down", "--volumes", "--remove-orphans", check=False)
@@ -128,14 +150,18 @@ class ComposeStack:
             time.sleep(1)
         raise StackError(f"{target} was not ready within {timeout_seconds}s: {last_error}")
 
-    def export_traces(self, destination: Path, stop_applications: bool) -> bool:
+    def export_traces(
+        self,
+        destination: Path,
+        stop_applications: bool,
+        applications: list[str] | None = None,
+    ) -> bool:
         if self.container_status("multiregion-otel-collector") != "running":
             return False
         if stop_applications:
-            self._run(
-                ["docker", "stop", "-t", "25", "multiregion-app-us", "multiregion-app-eu"],
-                check=False,
-            )
+            names = applications if applications is not None else ["multiregion-app-us", "multiregion-app-eu"]
+            if names:
+                self._run(["docker", "stop", "-t", "25", *names], check=False)
         time.sleep(5)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():
@@ -161,7 +187,12 @@ class ComposeStack:
         return completed.returncode == 0
 
     def _compose(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return self._run(["docker", "compose", "--ansi", "never", *self.compose_files, *args], check=check)
+        command = ["docker", "compose", "--ansi", "never"]
+        if self.project_name:
+            command.extend(["--project-name", self.project_name])
+        command.extend(self.compose_files)
+        command.extend(args)
+        return self._run(command, check=check)
 
     def _run(
         self,

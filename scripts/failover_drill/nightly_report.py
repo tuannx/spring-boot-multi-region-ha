@@ -7,10 +7,17 @@ from failover_drill.report import (
     _results_table,
 )
 
+ACTIVE_REGION_MEASUREMENT_SCOPE = (
+    "local mock (four home-region PostgreSQL writers + fault injection), not real Aurora Global"
+)
+ACTIVE_REGION_SCENARIOS = frozenset({"lose-1-of-4", "lose-2-of-4", "partition-2-2"})
+
 
 def measurement_scope_for(scenario_name: str) -> str:
     if scenario_name == "primary-kill":
         return MEASUREMENT_SCOPE
+    if scenario_name in ACTIVE_REGION_SCENARIOS:
+        return ACTIVE_REGION_MEASUREMENT_SCOPE
     return NIGHTLY_MEASUREMENT_SCOPE
 
 
@@ -69,7 +76,8 @@ def render_nightly_markdown(report: dict) -> str:
     lines.append(
         "The `primary-kill` aggregate is the baseline pull requests compare. "
         "It uses the same container kill as the pull-request drill and does not pass through Toxiproxy. "
-        "`network-partition` and `slow-db` run only on this nightly workflow."
+        "`network-partition`, `slow-db`, `lose-1-of-4`, `lose-2-of-4`, and `partition-2-2` "
+        "run only on this nightly workflow. The four-region scenarios are not part of the pull-request drill."
     )
     scenarios = report.get("scenarios")
     if not isinstance(scenarios, list):

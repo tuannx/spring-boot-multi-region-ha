@@ -59,6 +59,30 @@ class FlywayMigrationConfigTest {
     }
 
     @Test
+    void asiaPacificRegionsResolveAsHomeWriters() {
+        assertThat(RegionPlaceholders.forRegion("ap-southeast-1").asMap())
+                .containsEntry("flywaySelfInstance", "postgres-apse1")
+                .containsEntry("flywayPeerInstance", "postgres-apne1")
+                .containsEntry("flywayRegion", "ap-southeast-1")
+                .containsEntry("flywayWriterMode", "TRUE");
+        assertThat(RegionPlaceholders.forRegion("ap-northeast-1").asMap())
+                .containsEntry("flywaySelfInstance", "postgres-apne1")
+                .containsEntry("flywayPeerInstance", "postgres-apse1")
+                .containsEntry("flywayWriterMode", "TRUE");
+    }
+
+    @Test
+    void shardWriterModePromotesTheEuPlaceholderWithoutChangingTheDefaultLab() {
+        assertThat(RegionPlaceholders.forRegion("eu-west-1").asMap())
+                .containsEntry("flywayWriterMode", "FALSE");
+        assertThat(RegionPlaceholders.forRegion("eu-west-1", true).asMap())
+                .containsEntry("flywayWriterMode", "TRUE")
+                .containsEntry("flywaySelfInstance", "postgres-eu");
+        assertThat(RegionPlaceholders.forRegion("us-east-1", true).asMap())
+                .containsEntry("flywayWriterMode", "TRUE");
+    }
+
+    @Test
     void unknownRegionFailsClosedInsteadOfMigratingWithGuessedValues() {
         assertThatThrownBy(() -> RegionPlaceholders.forRegion("ap-south-1"))
                 .isInstanceOf(IllegalArgumentException.class)

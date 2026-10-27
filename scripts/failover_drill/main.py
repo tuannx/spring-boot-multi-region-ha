@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from failover_drill.active_regions import run_active_scenario
 from failover_drill.config import ScenarioConfig, load_config, resolve_profile, scenario_gates, select_scenarios
 from failover_drill.metrics import (
     duplicate_writes,
@@ -104,6 +105,17 @@ def _run_scenario(
 ) -> dict:
     output_dir = root / "reports" / "failover-drill"
     output_dir.mkdir(parents=True, exist_ok=True)
+    if scenario.topology == "active-regions":
+        return run_active_scenario(
+            root,
+            config,
+            scenario,
+            profile,
+            commit_sha,
+            run_url,
+            keep,
+            output_dir,
+        )
     stack = ComposeStack(root, scenario.compose_overlay)
     scenario_baseline = baseline if scenario.name == "primary-kill" else None
     try:
@@ -293,6 +305,8 @@ def _run_iteration(stack: ComposeStack, config, scenario: ScenarioConfig, toxipr
             present,
             recovery_timeout_ms,
         ),
+        "write_conflicts": 0,
+        "convergence_lag_seconds": 0.0 if rpo_seconds is None else rpo_seconds,
         "driver_failover_verified": verified,
         "primary_container_status": us_status,
         "promoted_writer_mode": eu_writer == "t",

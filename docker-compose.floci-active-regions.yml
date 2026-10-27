@@ -1,0 +1,71 @@
+# Optional Floci control planes for ap-southeast-1 and ap-northeast-1.
+# The two-region Floci acceptance stack does not load this file.
+#   docker compose -f docker-compose.floci.yml -f docker-compose.floci-active-regions.yml up -d
+services:
+  floci-apse1:
+    image: floci/floci:2.2.0
+    container_name: spring-ha-floci-apse1
+    environment:
+      FLOCI_DEFAULT_REGION: ap-southeast-1
+      FLOCI_HOSTNAME: floci-apse1
+      FLOCI_SERVICES_DOCKER_NETWORK: spring-ha-floci
+      FLOCI_SERVICES_RDS_PROXY_BASE_PORT: "7021"
+      FLOCI_SERVICES_RDS_PROXY_MAX_PORT: "7030"
+      FLOCI_SERVICES_AMAZONMQ_AMQP_HOST_PORT_BASE: "5721"
+      FLOCI_SERVICES_AMAZONMQ_AMQP_HOST_PORT_MAX: "5725"
+      FLOCI_SERVICES_AMAZONMQ_CONSOLE_HOST_PORT_BASE: "15721"
+      FLOCI_SERVICES_AMAZONMQ_CONSOLE_HOST_PORT_MAX: "15725"
+      FLOCI_STORAGE_MODE: memory
+    ports:
+      - "4568:4566"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - floci-net
+
+  floci-apne1:
+    image: floci/floci:2.2.0
+    container_name: spring-ha-floci-apne1
+    environment:
+      FLOCI_DEFAULT_REGION: ap-northeast-1
+      FLOCI_HOSTNAME: floci-apne1
+      FLOCI_SERVICES_DOCKER_NETWORK: spring-ha-floci
+      FLOCI_SERVICES_RDS_PROXY_BASE_PORT: "7031"
+      FLOCI_SERVICES_RDS_PROXY_MAX_PORT: "7040"
+      FLOCI_SERVICES_AMAZONMQ_AMQP_HOST_PORT_BASE: "5731"
+      FLOCI_SERVICES_AMAZONMQ_AMQP_HOST_PORT_MAX: "5735"
+      FLOCI_SERVICES_AMAZONMQ_CONSOLE_HOST_PORT_BASE: "15731"
+      FLOCI_SERVICES_AMAZONMQ_CONSOLE_HOST_PORT_MAX: "15735"
+      FLOCI_STORAGE_MODE: memory
+    ports:
+      - "4569:4566"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - floci-net
+
+  postgres-apse1:
+    image: alpine/socat:1.8.1.3
+    container_name: spring-ha-floci-postgres-apse1
+    command:
+      - -d
+      - -d
+      - TCP-LISTEN:5432,fork,reuseaddr
+      - TCP:floci-apse1:${FLOCI_DATABASE_APSE1_PORT:-7021}
+    depends_on:
+      - floci-apse1
+    networks:
+      - floci-net
+
+  postgres-apne1:
+    image: alpine/socat:1.8.1.3
+    container_name: spring-ha-floci-postgres-apne1
+    command:
+      - -d
+      - -d
+      - TCP-LISTEN:5432,fork,reuseaddr
+      - TCP:floci-apne1:${FLOCI_DATABASE_APNE1_PORT:-7031}
+    depends_on:
+      - floci-apne1
+    networks:
+      - floci-net

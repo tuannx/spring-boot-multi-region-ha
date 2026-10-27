@@ -1,6 +1,7 @@
 package com.multiregion.platform.database;
 
 import com.multiregion.platform.config.MultiRegionConfig;
+import com.multiregion.platform.topology.HomeRegion;
 import com.zaxxer.hikari.HikariDataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -255,12 +256,8 @@ public class DatabaseConnections {
     }
 
     private String defaultLocalDbHost() {
-        if ("eu-west-1".equalsIgnoreCase(awsRegion)) {
-            return "postgres-eu";
-        }
-        if ("us-east-1".equalsIgnoreCase(awsRegion)) {
-            return "postgres-us";
-        }
-        return "secondary".equalsIgnoreCase(regionRole) ? "postgres-eu" : "postgres-us";
+        return HomeRegion.find(awsRegion)
+                .map(HomeRegion::databaseHost)
+                .orElseGet(() -> "secondary".equalsIgnoreCase(regionRole) ? "postgres-eu" : "postgres-us");
     }
 }
