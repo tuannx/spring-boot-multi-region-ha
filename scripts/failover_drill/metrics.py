@@ -253,16 +253,28 @@ def metric_delta(
     }
 
 
-def _fail_limit(failures: list[str], aggregate: dict, runs: list[dict], name: str, limit: float) -> None:
+def _fail_limit(
+    failures: list[str],
+    aggregate: dict,
+    runs: list[dict],
+    name: str,
+    limit: float,
+    *,
+    required: bool = False,
+) -> None:
     if name not in aggregate:
-        return
-    value = aggregate.get(name)
-    if value is None or float(value) > float(limit):
-        failures.append(
-            f"{name} {value} exceeds {limit}" if value is not None else f"{name} is missing"
-        )
+        if required:
+            failures.append(f"{name} is missing")
+    else:
+        value = aggregate.get(name)
+        if value is None or float(value) > float(limit):
+            failures.append(
+                f"{name} {value} exceeds {limit}" if value is not None else f"{name} is missing"
+            )
     for run in runs:
         if name not in run:
+            if required:
+                failures.append(f"run {run.get('index')} {name} is missing")
             continue
         run_value = run.get(name)
         if run_value is None or (isinstance(run_value, (int, float)) and float(run_value) > float(limit)):
@@ -315,8 +327,12 @@ def evaluate_gate(
     baseline_aggregate: dict | None,
     gates: DrillGates,
     runs: list[dict],
+    topology: str | None = None,
 ) -> dict:
     failures: list[str] = []
+    active = topology == "active-regions" or any(
+        run.get("verification") == "active-region-routing" for run in runs
+    )
     for run in runs:
         if run.get("rto_seconds") is None:
             failures.append(f"run {run['index']} produced no recovered write")
@@ -344,8 +360,22 @@ def evaluate_gate(
         )
     _fail_count(failures, aggregate, runs, "rpo_lost_writes", gates.rpo_lost_writes_max)
     _fail_count(failures, aggregate, runs, "duplicate_writes", gates.duplicate_writes_max)
-    _fail_limit(failures, aggregate, runs, "write_conflicts", gates.write_conflicts_max)
-    _fail_limit(failures, aggregate, runs, "convergence_lag_seconds", gates.convergence_lag_seconds_max)
+    _fail_limit(
+        failures,
+        aggregate,
+        runs,
+        "write_conflicts",
+        gates.write_conflicts_max,
+        required=active,
+    )
+    _fail_limit(
+        failures,
+        aggregate,
+        runs,
+        "convergence_lag_seconds",
+        gates.convergence_lag_seconds_max,
+        required=active,
+    )
 
     if baseline_aggregate is not None:
         min_deltas = gates.regression_min_deltas()

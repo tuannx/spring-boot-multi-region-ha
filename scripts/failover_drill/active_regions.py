@@ -21,7 +21,7 @@ from failover_drill.nightly_report import measurement_scope_for
 from failover_drill.report import build_report, failure_report
 from failover_drill.stack import ComposeStack, StackError
 from failover_drill.toxiproxy import ToxiproxyClient
-from failover_drill.traces import utc_timestamp
+from failover_drill.traces import uncovered_iterations, utc_timestamp
 from failover_drill.workload import Clock, WorkloadControl, request_status
 
 PROJECT_NAME = "active-regions"
@@ -331,12 +331,15 @@ def _execute_active(
     _require_known_regions()
     stack.down()
     built = _ensure_images(stack)
-    services = [region.postgres_service for region in REGIONS]
+    services = ["otel-collector"]
+    services.extend(region.postgres_service for region in REGIONS)
     services.extend(region.app_service for region in REGIONS)
     toxiproxy = _toxiproxy(config, scenario)
     if toxiproxy is not None:
         services = ["toxiproxy", *services]
     report: dict | None = None
+    trace_path = output_dir / "scenarios" / scenario.name / "otlp-trace.json"
+    exported = False
     try:
         stack.up_services(services)
         timeout = ACTIVE_READY_TIMEOUT_SECONDS
@@ -364,10 +367,28 @@ def _execute_active(
         _preserve_logs(stack, output_dir / "scenarios" / scenario.name / "compose.log")
         raise
     finally:
+        exported = stack.export_traces(
+            trace_path,
+            stop_applications=not keep,
+            applications=[region.app_container for region in REGIONS],
+        )
         if not keep:
             stack.down()
     if report is None:
         raise StackError(f"{scenario.name} did not produce a report")
+    if not exported:
+        _fail_trace_gate(report, "otlp-trace.json was not exported")
+        return report
+    missing = uncovered_iterations(trace_path.read_text(encoding="utf-8"), report["runs"])
+    if missing:
+        joined = ", ".join(str(index) for index in missing)
+        _fail_trace_gate(
+            report,
+            "otlp-trace.json does not cover before, during, and after the writer switch "
+            f"for iteration {joined}",
+        )
+    else:
+        report["runtime"]["traces_cover_failover"] = True
     return report
 
 
@@ -1017,9 +1038,20 @@ def _runtime(scenario: ScenarioConfig, built: bool) -> dict:
         "replication": "home-region-row-filter",
         "images_reused": not built,
         "application_promotion": "router pair receives new keys on its own home writer",
-        "otel_agent": "not-attached",
+        "traces_file": "otlp-trace.json",
+        "traces_format": "otlp-json-lines",
+        "otel_agent": "opentelemetry-javaagent",
+        "otel_collector": "file-exporter",
         "measurement_scope": measurement_scope_for(scenario.name),
     }
+
+
+def _fail_trace_gate(report: dict, message: str) -> None:
+    report["runtime"]["traces_cover_failover"] = False
+    report["gate"]["passed"] = False
+    failures = list(report["gate"].get("failures") or [])
+    failures.append(message)
+    report["gate"]["failures"] = failures
 
 
 def _annotate(report: dict, scenario: ScenarioConfig, profile: str) -> None:

@@ -399,8 +399,8 @@ def _validate_active_scenario(
 ) -> None:
     if profiles != ("nightly",):
         raise ValueError(f"Scenario {name} is nightly-only")
-    if iterations != 1:
-        raise ValueError(f"Scenario {name} runs one iteration so the nightly drill stays bounded")
+    if iterations != 3:
+        raise ValueError(f"Scenario {name} runs three iterations, the same count as the single-writer drill")
     if lost_max != 0 or rpo_seconds_max != 0 or conflicts_max != 0:
         raise ValueError(f"Scenario {name} keeps zero lost writes, zero RPO seconds, and zero write conflicts")
     if lag_max <= 0:

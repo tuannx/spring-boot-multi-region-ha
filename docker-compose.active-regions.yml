@@ -48,6 +48,16 @@ x-app-env: &app-env
   ACTIVE_WRITER_DB_PORT: "5432"
   LOCAL_DB_PORT: "5432"
   FAILOVER_WRITER_DB_PORT: "5432"
+  JAVA_OPTS: "-javaagent:/app/opentelemetry-javaagent.jar"
+  OTEL_SDK_DISABLED: "false"
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment=failover-drill,service.namespace=multiregion
+  OTEL_TRACES_EXPORTER: otlp
+  OTEL_METRICS_EXPORTER: none
+  OTEL_LOGS_EXPORTER: none
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  OTEL_PROPAGATORS: tracecontext
+  OTEL_BSP_SCHEDULE_DELAY: "200"
 
 x-app: &app
   image: multiregion-app-us:latest
@@ -97,6 +107,17 @@ services:
       - ./docker/failover-drill/010-logical-replication-hba.sh:/docker-entrypoint-initdb.d/010-logical-replication-hba.sh:ro
       - pg-apne1-data:/var/lib/postgresql
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0
+    container_name: multiregion-otel-collector
+    user: "0:0"
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./docker/failover-drill/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - otel-traces:/traces
+    networks:
+      - active-regions-net
+
   app-us:
     <<: *app
     build:
@@ -114,11 +135,14 @@ services:
       FAILOVER_WRITER_DB_HOST: postgres-us
       GLOBAL_CLUSTER_PATTERNS: postgres-us:5432,postgres-eu:5432
       SERVER_PORT: "8080"
+      OTEL_SERVICE_NAME: multiregion-app-us
     ports:
       - "${APP_US_HOST_PORT:-8080}:8080"
     depends_on:
       postgres-us:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   app-eu:
     <<: *app
@@ -134,11 +158,14 @@ services:
       FAILOVER_WRITER_DB_HOST: postgres-eu
       GLOBAL_CLUSTER_PATTERNS: postgres-eu:5432,postgres-us:5432
       SERVER_PORT: "8081"
+      OTEL_SERVICE_NAME: multiregion-app-eu
     ports:
       - "${APP_EU_HOST_PORT:-8081}:8081"
     depends_on:
       postgres-eu:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   app-apse1:
     <<: *app
@@ -154,11 +181,14 @@ services:
       FAILOVER_WRITER_DB_HOST: postgres-apse1
       GLOBAL_CLUSTER_PATTERNS: postgres-apse1:5432,postgres-apne1:5432
       SERVER_PORT: "8082"
+      OTEL_SERVICE_NAME: multiregion-app-apse1
     ports:
       - "${APP_APSE1_HOST_PORT:-8082}:8082"
     depends_on:
       postgres-apse1:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   app-apne1:
     <<: *app
@@ -174,11 +204,14 @@ services:
       FAILOVER_WRITER_DB_HOST: postgres-apne1
       GLOBAL_CLUSTER_PATTERNS: postgres-apne1:5432,postgres-apse1:5432
       SERVER_PORT: "8083"
+      OTEL_SERVICE_NAME: multiregion-app-apne1
     ports:
       - "${APP_APNE1_HOST_PORT:-8083}:8083"
     depends_on:
       postgres-apne1:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   servicetalk-router:
     build:
@@ -225,6 +258,7 @@ volumes:
   pg-eu-data:
   pg-apse1-data:
   pg-apne1-data:
+  otel-traces:
 
 networks:
   active-regions-net:

@@ -87,11 +87,13 @@ def build_report(
                 config.gates.regression_ratio_max,
                 config.gates.regression_min_deltas(),
             )
+    topology = runtime.get("topology") if isinstance(runtime, dict) else None
     gate = evaluate_gate(
         aggregate,
         baseline_aggregate if isinstance(baseline_aggregate, dict) else None,
         config.gates if gates is None else gates,
         runs,
+        topology if isinstance(topology, str) else None,
     )
     return {
         "schema_version": 1,

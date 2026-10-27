@@ -2,7 +2,7 @@
 
 The default `docker compose up` stack is still two regions and one writer. This file is the four-region topology from [ADR 0003](adr/0003-home-region-sharding.md).
 
-Stop the default stack before starting this one. Both projects set `container_name` on `multiregion-us`, `multiregion-eu`, and `multiregion-router`. The Compose project name `active-regions` keeps the volumes apart.
+Stop the default stack before starting this one. Both projects set `container_name` on `multiregion-us`, `multiregion-eu`, `multiregion-router`, and `multiregion-otel-collector`. The Compose project name `active-regions` keeps the volumes apart.
 
 ```bash
 docker compose -p active-regions -f docker-compose.active-regions.yml up -d --build
@@ -35,7 +35,7 @@ Publications are row-filtered: `shard_<code>` publishes `products` where `region
 
 `partition-2-2` loads `docker-compose.active-regions-partition.yml`. Cross-pair subscriptions use Toxiproxy `2.12.0` on host ports 5601 (`us-east-1`), 5602 (`eu-west-1`), 5603 (`ap-southeast-1`), and 5604 (`ap-northeast-1`). Pair subscriptions stay on the database hostname. The API is `http://127.0.0.1:8474`.
 
-These scenarios run one iteration. The workload is one writer thread per region against the router, with no read workers and no OpenTelemetry agent. `write_conflicts` and `convergence_lag_seconds` are recorded next to RTO, RPO, lost writes, and p99. The conflict limit is 0. The convergence limit is 15 seconds. A probe that does not catch up is reported as 16 seconds.
+These scenarios run three iterations, the same count as the single-writer drill. The workload is one writer thread per region against the router, with no read workers. Each application attaches the OpenTelemetry Java agent (`JAVA_OPTS` replaces the AOT cache) and exports to the Collector in this Compose file. The drill writes `reports/failover-drill/scenarios/<name>/otlp-trace.json` and fails the scenario when that file is missing or does not cover the fault. `write_conflicts` and `convergence_lag_seconds` are recorded next to RTO, RPO, lost writes, and p99. A missing value fails the active-region gate. An older baseline artifact may still omit those two fields. The conflict limit is 0. The convergence limit is 15 seconds. A probe that does not catch up is reported as 16 seconds. The nightly job timeout is 120 minutes. The passing worst case, including the existing scenarios, is about 90 minutes and is recorded in [ADR 0003](adr/0003-home-region-sharding.md).
 
 The pull-request drill does not start this stack. [`.github/workflows/e2e.yml`](../.github/workflows/e2e.yml) runs `docker compose config` on the four-region files.
 

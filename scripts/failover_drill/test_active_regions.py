@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,6 +32,7 @@ from failover_drill.active_regions import (
 from failover_drill.config import ACTIVE_REGION_IDS, load_config
 from failover_drill.metrics import Attempt, evaluate_gate, write_conflicts
 from failover_drill.nightly_report import ACTIVE_REGION_MEASUREMENT_SCOPE, measurement_scope_for
+from failover_drill.stack import ComposeStack
 from failover_drill.test_metrics import _gates
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,7 +52,7 @@ class ActiveRegionTopologyTest(unittest.TestCase):
             scenario = by_name[name]
             self.assertEqual(scenario.topology, "active-regions")
             self.assertEqual(scenario.profiles, ("nightly",))
-            self.assertEqual(scenario.iterations, 1)
+            self.assertEqual(scenario.iterations, 3)
             self.assertEqual(scenario.write_conflicts_max, 0)
             self.assertGreater(scenario.convergence_lag_seconds_max, 0)
             self.assertFalse(scenario.uses_toxiproxy)
@@ -115,6 +117,19 @@ class ActiveRegionTopologyTest(unittest.TestCase):
         self.assertIn("READ_FAILOVER_MODE: strict-writer", active)
         self.assertIn("name: active-regions", active)
         self.assertNotIn("restart:", active)
+        self.assertIn("otel/opentelemetry-collector-contrib:0.153.0", active)
+        self.assertIn("docker/failover-drill/otel-collector.yaml", active)
+        self.assertIn('JAVA_OPTS: "-javaagent:/app/opentelemetry-javaagent.jar"', active)
+        self.assertIn("OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318", active)
+        for service_name in (
+            "multiregion-app-us",
+            "multiregion-app-eu",
+            "multiregion-app-apse1",
+            "multiregion-app-apne1",
+        ):
+            self.assertIn(f"OTEL_SERVICE_NAME: {service_name}", active)
+        self.assertEqual(active.count("condition: service_started"), 4)
+        self.assertIn("otel-traces:", active)
         self.assertIn("ghcr.io/shopify/toxiproxy:2.12.0", partition)
         self.assertIn("8474:8474", partition)
         self.assertIn("FLOCI_DEFAULT_REGION: ap-southeast-1", floci)
@@ -177,6 +192,37 @@ class ActiveRegionMetricTest(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertTrue(any("convergence_lag_seconds 16.0 exceeds 15" in failure for failure in result["failures"]))
 
+    def test_missing_conflict_or_lag_fails_only_the_active_region_gate(self) -> None:
+        run = {
+            "index": 2,
+            "rto_seconds": 1.0,
+            "rpo_seconds": 0.0,
+            "rpo_lost_writes": 0,
+            "duplicate_writes": 0,
+            "error_count": 0,
+            "p99_latency_ms": 10.0,
+            "driver_failover_verified": True,
+        }
+        omitted = evaluate_gate(dict(run), None, _gates(), [run], topology="active-regions")
+        self.assertFalse(omitted["passed"])
+        self.assertIn("write_conflicts is missing", omitted["failures"])
+        self.assertIn("convergence_lag_seconds is missing", omitted["failures"])
+        self.assertIn("run 2 write_conflicts is missing", omitted["failures"])
+        self.assertIn("run 2 convergence_lag_seconds is missing", omitted["failures"])
+        present = dict(run)
+        present["write_conflicts"] = 0
+        present["convergence_lag_seconds"] = 0.0
+        partial_run = dict(run)
+        partial = evaluate_gate(present, None, _gates(), [partial_run], topology="active-regions")
+        self.assertIn("run 2 write_conflicts is missing", partial["failures"])
+        self.assertNotIn("write_conflicts is missing", partial["failures"])
+        routed = dict(run)
+        routed["verification"] = "active-region-routing"
+        by_verification = evaluate_gate(dict(routed), None, _gates(), [routed])
+        self.assertIn("convergence_lag_seconds is missing", by_verification["failures"])
+        single_writer = evaluate_gate(dict(run), None, _gates(), [run])
+        self.assertTrue(single_writer["passed"])
+
     def test_unverified_routing_names_the_live_home_writer(self) -> None:
         run = {
             "index": 1,
@@ -219,6 +265,67 @@ class ActiveRegionMetricTest(unittest.TestCase):
         self.assertEqual(measurement_scope_for("lose-1-of-4"), ACTIVE_REGION_MEASUREMENT_SCOPE)
         self.assertEqual(measurement_scope_for("partition-2-2"), ACTIVE_REGION_MEASUREMENT_SCOPE)
         self.assertNotIn("Toxiproxy", measurement_scope_for("lose-2-of-4"))
+
+
+class ActiveTraceExportTest(unittest.TestCase):
+    def test_export_stops_the_four_application_containers(self) -> None:
+        stack = ComposeStack(
+            ROOT,
+            project_name="active-regions",
+            compose_files=["-f", "docker-compose.active-regions.yml"],
+        )
+        calls: list[list[str]] = []
+
+        def fake_run(command, check=True, input_text=None):
+            calls.append(list(command))
+
+            class Result:
+                returncode = 1
+                stdout = ""
+                stderr = ""
+
+            return Result()
+
+        applications = [region.app_container for region in REGIONS]
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "otlp-trace.json"
+            with patch.object(stack, "_run", side_effect=fake_run), patch.object(
+                stack, "container_status", return_value="running"
+            ), patch("failover_drill.stack.time.sleep"):
+                exported = stack.export_traces(destination, True, applications)
+                default_calls: list[list[str]] = []
+
+                def record_default(command, check=True, input_text=None):
+                    default_calls.append(list(command))
+
+                    class Result:
+                        returncode = 1
+                        stdout = ""
+                        stderr = ""
+
+                    return Result()
+
+                with patch.object(stack, "_run", side_effect=record_default):
+                    stack.export_traces(destination, True)
+        self.assertFalse(exported)
+        self.assertEqual(calls[0][:4], ["docker", "stop", "-t", "25"])
+        self.assertEqual(calls[0][4:], applications)
+        self.assertEqual(
+            default_calls[0][4:],
+            ["multiregion-app-us", "multiregion-app-eu"],
+        )
+
+    def test_one_iteration_is_rejected(self) -> None:
+        payload = json.loads(CONFIG.read_text(encoding="utf-8"))
+        for entry in payload["scenarios"]:
+            if entry["name"] == "lose-1-of-4":
+                entry["iterations"] = 1
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "drill.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(ValueError) as caught:
+                load_config(path)
+        self.assertIn("three iterations", str(caught.exception))
 
 
 class ActiveScenarioDispatchTest(unittest.TestCase):

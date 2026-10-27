@@ -81,7 +81,7 @@
       "rpo_seconds_max": 0,
       "rpo_lost_writes_max": 0,
       "topology": "active-regions",
-      "iterations": 1,
+      "iterations": 3,
       "killed_regions": ["ap-southeast-1"],
       "write_conflicts_max": 0,
       "convergence_lag_seconds_max": 15
@@ -98,7 +98,7 @@
       "rpo_seconds_max": 0,
       "rpo_lost_writes_max": 0,
       "topology": "active-regions",
-      "iterations": 1,
+      "iterations": 3,
       "killed_regions": ["eu-west-1", "ap-northeast-1"],
       "write_conflicts_max": 0,
       "convergence_lag_seconds_max": 15
@@ -115,7 +115,7 @@
       "rpo_seconds_max": 0,
       "rpo_lost_writes_max": 0,
       "topology": "active-regions",
-      "iterations": 1,
+      "iterations": 3,
       "killed_regions": [],
       "write_conflicts_max": 0,
       "convergence_lag_seconds_max": 15

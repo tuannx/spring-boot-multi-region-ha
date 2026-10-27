@@ -150,14 +150,18 @@ class ComposeStack:
             time.sleep(1)
         raise StackError(f"{target} was not ready within {timeout_seconds}s: {last_error}")
 
-    def export_traces(self, destination: Path, stop_applications: bool) -> bool:
+    def export_traces(
+        self,
+        destination: Path,
+        stop_applications: bool,
+        applications: list[str] | None = None,
+    ) -> bool:
         if self.container_status("multiregion-otel-collector") != "running":
             return False
         if stop_applications:
-            self._run(
-                ["docker", "stop", "-t", "25", "multiregion-app-us", "multiregion-app-eu"],
-                check=False,
-            )
+            names = applications if applications is not None else ["multiregion-app-us", "multiregion-app-eu"]
+            if names:
+                self._run(["docker", "stop", "-t", "25", *names], check=False)
         time.sleep(5)
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.exists():

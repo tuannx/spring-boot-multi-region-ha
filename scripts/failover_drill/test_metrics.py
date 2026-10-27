@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -20,6 +22,7 @@ from failover_drill.report import (
     MEASUREMENT_SCOPE,
     aggregate_runs,
     build_report,
+    load_baseline,
     record_unavailable_architecture_diff,
     render_comment,
     render_readme_section,
@@ -351,6 +354,53 @@ runs:
         self.assertEqual(config.gates.rpo_regression_min_delta_seconds, 0.5)
         self.assertEqual(config.gates.error_count_regression_min_delta, 2)
         self.assertNotIn("p99_latency_ms", config.gates.regression_metrics)
+
+    def test_an_old_baseline_may_omit_conflict_and_convergence(self) -> None:
+        payload = {
+            "commit_sha": "old",
+            "aggregate": {
+                "rto_seconds": 1,
+                "rpo_seconds": 0,
+                "rpo_lost_writes": 0,
+                "duplicate_writes": 0,
+                "error_count": 0,
+                "p99_latency_ms": 10,
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "baseline.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            loaded = load_baseline(path)
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertIsNone(loaded["aggregate"]["write_conflicts"])
+        self.assertIsNone(loaded["aggregate"]["convergence_lag_seconds"])
+        self.assertEqual(loaded["aggregate"]["rto_seconds"], 1)
+        payload["aggregate"].pop("rto_seconds")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "baseline.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                load_baseline(path)
+
+    def test_active_region_report_fails_when_a_run_omits_conflict_or_lag(self) -> None:
+        config = load_config(Path(__file__).resolve().parents[2] / "config" / "failover-drill.json")
+        run = _run()
+        del run["write_conflicts"]
+        del run["convergence_lag_seconds"]
+        report = build_report(
+            config,
+            [run],
+            "abc",
+            None,
+            {"topology": "active-regions"},
+            None,
+        )
+        self.assertFalse(report["gate"]["passed"])
+        self.assertIn("write_conflicts is missing", report["gate"]["failures"])
+        self.assertIn("convergence_lag_seconds is missing", report["gate"]["failures"])
+        self.assertIn("run 1 write_conflicts is missing", report["gate"]["failures"])
+        self.assertIn("run 1 convergence_lag_seconds is missing", report["gate"]["failures"])
 
     def test_readme_results_table_is_generated_from_the_config(self) -> None:
         config = load_config(Path(__file__).resolve().parents[2] / "config" / "failover-drill.json")

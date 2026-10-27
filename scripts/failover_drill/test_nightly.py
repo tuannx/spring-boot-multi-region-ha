@@ -98,7 +98,7 @@ class NightlyConfigTest(unittest.TestCase):
         self.assertEqual(split.fault, "split-pairs")
         self.assertEqual(split.compose_overlay, "docker-compose.active-regions-partition.yml")
         self.assertFalse(split.uses_toxiproxy)
-        self.assertEqual(lose_one.iterations, 1)
+        self.assertEqual(lose_one.iterations, 3)
         self.assertEqual(lose_one.convergence_lag_seconds_max, 15)
         self.assertEqual(scenario_gates(config, lose_one).write_conflicts_max, 0)
         overlay = (ROOT / "docker-compose.failover-drill-extended.yml").read_text(encoding="utf-8")
