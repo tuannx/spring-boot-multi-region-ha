@@ -32,7 +32,7 @@ dependencies {
     implementation("org.pkl-lang:pkl-spring:0.18.0")
 
     // PostgreSQL driver
-    implementation("org.postgresql:postgresql:42.7.13")
+    implementation("org.postgresql:postgresql:42.7.14")
 
     // Flyway: versioned schema (Aurora mock, fencing trigger, seeds) replaces
     // the hand-synced docker/init scripts. Versions managed by the Boot BOM.
