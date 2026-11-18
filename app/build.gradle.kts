@@ -40,7 +40,7 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
 
     // AWS Advanced JDBC Wrapper with Global Database failover
-    implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.4.0")
+    implementation("software.amazon.jdbc:aws-advanced-jdbc-wrapper:4.5.0")
 
     // Resilience4j (programmatic, no Spring starter): circuit breaker for
     // topology probes and bulkhead for the write route. Pinned via BOM.
