@@ -1,6 +1,6 @@
 # ServiceTalk Locality-Aware Multi-Region Router
 
-An enterprise-grade, asynchronous, non-blocking HTTP edge router built with **ServiceTalk** and **Netty**, implementing **Envoy/ServiceTalk Locality Priority ($P_0 \to P_1$)** with **Passive Outlier Detection** and **Zero-Latency-Penalty Failover**.
+An enterprise-grade, asynchronous, non-blocking HTTP edge router built with **ServiceTalk** and **Netty**, implementing **Envoy/ServiceTalk Locality Priority ($P_0 \to P_1$)** with **Active Health Checks**, **Passive Outlier Detection** and **Envoy-style retry rules** (safe-to-retry check, retry budget, per-try and route timeouts).
 
 This case demonstrates the architectural contrast between traditional reverse proxies (such as Nginx) and reactive locality routers during regional disaster recovery and multi-region outages.
 
@@ -21,15 +21,22 @@ In a typical Active-Passive or Active-Active Multi-Region deployment (e.g. `us-e
 The ServiceTalk Router is designed specifically for multi-region topologies:
 
 - **Locality Priority ($P_0 \to P_1$)**: Dynamically maps requests based on origin header (`X-Source-Region`) or client geolocation. Requests originating from US hit US compute ($P_0$); requests from EU hit EU compute ($P_0$).
-- **Passive Outlier Detection**: Tracks consecutive connection errors and upstream 5xx responses. When consecutive failures reach the threshold (default: 3), the endpoint is marked as an **Outlier** and ejected from the active pool for a configurable cooldown window (default: 5,000ms).
-- **Zero-Latency-Penalty Failover**: Once an endpoint is ejected, subsequent requests completely bypass the broken region and route directly to the healthy secondary region ($P_1$) with **0ms latency penalty** (< 15ms total latency) and **100% availability**.
-- **Safe In-Memory Payload Duplication**: Aggregates and duplicates HTTP request bodies in memory before proxying, allowing safe immediate failover for `POST` and `PUT` mutations without payload truncation or stream consumption errors.
-- **Probative Recovery**: Once the cooldown window expires, the router sends probe traffic to verify recovery before smoothly restoring normal $P_0$ priority.
+- **Active Health Checks**: Every region gets `GET /actuator/health` once a second. Two failed probes mark it unhealthy, two passing probes bring it back. A region that hangs is found without sending user requests to it, and stays out for as long as it keeps failing probes.
+- **Passive Outlier Detection**: Tracks consecutive connection errors, timeouts and upstream 502/503/504 responses. When they reach the threshold (default: 3), the endpoint is ejected. Ejection n lasts `n x COOLDOWN_MS`, capped at `MAX_EJECTION_MS` (Envoy's `base_ejection_time` and `max_ejection_time`), so a flapping region stays out longer each time.
+- **Fast Path After Detection**: Once a region is unhealthy or ejected, requests skip it and go straight to the next region ($P_1$) without a timeout penalty.
+- **Safe Retries Only**: A request that never left the router (connection refused, DNS failure, no host) goes to the next region whatever its method. A request that may have reached the backend (timeout, reset, 502/503/504 answer) goes to the next region only for idempotent methods (`GET`, `HEAD`, `OPTIONS`, `TRACE`, `PUT`, `DELETE`). A `POST` or `PATCH` is never replayed in a second region, because that can apply the write twice. This follows Gateway API GEP-1731 and NGINX's `proxy_next_upstream` default. The router answers with the upstream error and `X-Retry-Skipped: unsafe-method` instead.
+- **Retry Budget**: At most `max(3, 20% of active requests)` retries run at once (Envoy's retry budget defaults), so a failing region cannot double the load on the healthy one.
+- **Per-try and Route Timeouts**: `REQUEST_TIMEOUT_MS` bounds one try. `ROUTE_TIMEOUT_MS` bounds the whole request, retries included, and the router answers `504` with `X-Router-Timeout: route` when it runs out.
+- **Panic Mode**: When no region is healthy the router tries them all in priority order instead of refusing every request, and marks the answer with `X-Router-Panic: true`.
 - **Rich Telemetry Headers**: Adds diagnostic response headers:
   - `X-Routed-Region`: `us-east-1` or `eu-west-1`
   - `X-Routed-Priority`: `P0` (Primary) or `P1` (Secondary Failover)
   - `X-Router-Backend`: `servicetalk`
   - `X-Failover`: `true` or `false`
+  - `X-Router-Attempts`: how many regions were tried
+  - `X-Retry-Skipped`: why a failed try was not sent to the next region (`unsafe-method`, `retry-budget`, `no-more-regions`)
+  - `X-Router-Panic`: `true` when no region was healthy
+  - `X-Router-Timeout`: `route` when the route timeout ran out
 
 `APSE1_ENDPOINT_HOST` and `APNE1_ENDPOINT_HOST` add `ap-southeast-1` and `ap-northeast-1`. Pairs are `us-east-1` with `eu-west-1`, and `ap-southeast-1` with `ap-northeast-1`. `X-Source-Region` selects that region, then its pair, then the remaining endpoints by priority. Leaving the Asia hosts unset keeps the two-region process.
 
@@ -67,11 +74,11 @@ The ServiceTalk Router is designed specifically for multi-region topologies:
 
 | Architectural Metric | Traditional Nginx Router (Legacy `:8001`) | ServiceTalk Locality Router (Default `:8000`) |
 | :--- | :--- | :--- |
-| **Outlier Detection Strategy** | None (Blind reverse proxy) | Passive Outlier Ejection (3 errors, 5s cooldown) |
+| **Outlier Detection Strategy** | None (Blind reverse proxy) | Active health checks plus passive outlier ejection (3 errors, ejection grows 5s, 10s, ... up to 5 min) |
 | **Outage Failover Latency** | ~5,000ms stall (`proxy_connect_timeout`) | < 15ms (< 1ms routing overhead) |
-| **API Availability During Regional Crash** | **0%** (`502 Bad Gateway` / `504 Timeout`) | **100%** (Zero dropped requests) |
+| **API Availability During Regional Crash** | **0%** (`502 Bad Gateway` / `504 Timeout`) | 100% once the region is detected (about 2s). Requests in flight at the moment it hangs pay one per-try timeout, and with the default budget some of them get `504` instead of a retry (see section 5) |
 | **Failover Penalty for Subsequent Requests** | Full 5,000ms penalty on every request | **0ms Penalty** (ejected node bypassed completely) |
-| **State-Mutating Request Safety (`POST`)** | Drops connection / broken stream | Safe in-memory duplicated buffer replay |
+| **State-Mutating Request Safety (`POST`)** | Drops connection / broken stream | Replayed only when it never reached the backend; otherwise the error is returned, never a second write |
 | **Locality Routing Precision** | Static regex / map directives | Programmatic Envoy-style Locality Priority ($P_0 \to P_1$) |
 | **Observability Telemetry** | Basic access logs | Dynamic headers (`X-Routed-Priority`, `X-Failover`, `X-Routed-Region`) |
 
@@ -130,21 +137,27 @@ The benchmark script executes:
 1. **Phase 1**: Baseline latency distribution across all healthy nodes.
 2. **Phase 2**: Regional chaos injection (`docker pause multiregion-app-us`). Demonstrates Nginx stalling for 6,000ms while ServiceTalk detects failure and fails over.
 3. **Phase 3**: Passive outlier ejection. Dispatches consecutive requests to verify **0ms latency penalty** and **100% success rate**.
-4. **Phase 4**: Regional recovery and probationary probe traffic.
+4. **Phase 4**: Regional recovery (health checks bring the region back after two passing probes).
 5. **Phase 5**: Side-by-side comparative scorecard output.
 
 ---
 
 ## 5. Unit & Integration Testing
 
-The router includes a suite of integration tests verifying normal routing, explicit headers, outlier ejection, and payload preservation during failover:
-
 ```bash
 cd cases/servicetalk-router/app
 gradle test
 ```
 
----
+Three failure cases from the earlier version are now tests (local mock backends, per-try timeout 800ms):
+
+| Case | Before | After | Test |
+| :--- | :--- | :--- | :--- |
+| `POST` reaches US, is written, answers after 1200ms | Replayed in EU: written twice | `504`, `X-Retry-Skipped: unsafe-method`, written once | `RouterSafeRetryTest` |
+| US hangs, then 50 concurrent `GET`s | Ejection needed users to fail first: all 50 paid >= 700ms | Probes mark US unhealthy in about 2s with no user traffic; a burst after that: 0 of 50 >= 700ms | `RouterHealthCheckTest` |
+| US still hung after the 5s cooldown ends | All 50 paid >= 700ms again | 0 of 50 >= 700ms | `RouterHealthCheckTest` |
+
+The trade-off to know: 50 concurrent `GET`s that arrive the moment US hangs all pay one per-try timeout before detection. With the default budget (20%, min 3) about 21 of 50 were retried in EU and the rest got `504` with `X-Retry-Skipped: retry-budget`; with `RETRY_BUDGET_PERCENT=100` all 50 were retried. That is the budget protecting EU from a retry storm. Tune it per environment.
 
 ## 6. Configuration Reference
 
@@ -158,9 +171,19 @@ The router can be configured via environment variables:
 | `EU_ENDPOINT_HOST` / `TARGET_EU_HOST` | `app-eu` | Region 2 (`eu-west-1`) hostname |
 | `EU_ENDPOINT_PORT` / `TARGET_EU_PORT` | `8081` | Region 2 port |
 | `FAILURE_THRESHOLD` / `OUTLIER_FAILURE_THRESHOLD` | `3` | Consecutive failures before marking endpoint as outlier |
-| `COOLDOWN_MS` / `OUTLIER_COOLDOWN_MS` | `5000` | Duration (ms) an outlier remains ejected from active pool |
+| `COOLDOWN_MS` / `OUTLIER_COOLDOWN_MS` | `5000` | First ejection length; ejection n lasts n times this |
 | `CONNECT_TIMEOUT_MS` | `500` | Netty socket connect timeout in milliseconds |
-| `REQUEST_TIMEOUT_MS` | `800` | Total upstream request timeout before fast-failover |
+| `REQUEST_TIMEOUT_MS` | `800` | Per-try timeout: one attempt against one region |
+| `ROUTE_TIMEOUT_MS` | `2 x REQUEST_TIMEOUT_MS` | Whole-request timeout, retries included |
+| `MAX_EJECTION_MS` | `300000` | Cap on one outlier ejection |
+| `RETRY_BUDGET_PERCENT` | `20` | Concurrent retries allowed, as a percent of active requests |
+| `RETRY_MIN_CONCURRENCY` | `3` | Concurrent retries always allowed |
+| `HEALTH_CHECK_ENABLED` | `true` | Active health checks on or off |
+| `HEALTH_CHECK_PATH` | `/actuator/health` | Path probed on every region |
+| `HEALTH_CHECK_INTERVAL_MS` | `1000` | Time between probes |
+| `HEALTH_CHECK_TIMEOUT_MS` | `500` | Timeout of one probe |
+| `HEALTH_UNHEALTHY_THRESHOLD` | `2` | Failed probes before a region is marked unhealthy |
+| `HEALTH_HEALTHY_THRESHOLD` | `2` | Passing probes before it comes back |
 
 ---
 

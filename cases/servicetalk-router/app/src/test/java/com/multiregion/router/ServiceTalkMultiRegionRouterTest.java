@@ -148,17 +148,17 @@ class ServiceTalkMultiRegionRouterTest {
     }
 
     @Test
-    void postRequestBodyPreservedDuringFailover() throws Exception {
+    void postAnswered503ByPrimaryIsNotReplayedInSecondary() throws Exception {
+        // Before: the router sent this POST again to EU, which can write it twice.
+        // Body preservation on a safe failover is covered by RouterSafeRetryTest.
         usHealthy.set(false);
         String body = "{\"name\":\"item1\",\"price\":42.0}";
         StreamingHttpRequest request = routerClient.post("/api/products");
         request.payloadBody(Publisher.from(routerClient.executionContext().bufferAllocator().fromUtf8(body)));
         StreamingHttpResponse response = routerClient.request(request).toFuture().get();
 
-        assertEquals(OK, response.status());
-        assertEquals("eu-west-1", response.headers().get("X-Routed-Region").toString());
-        assertEquals("true", response.headers().get("X-Failover").toString());
-        String responseBody = response.payloadBody().collect(StringBuilder::new, (sb, b) -> sb.append(b.toString(StandardCharsets.UTF_8))).toFuture().get().toString();
-        assertEquals(body, responseBody);
+        assertEquals(SERVICE_UNAVAILABLE, response.status());
+        assertEquals("us-east-1", response.headers().get("X-Routed-Region").toString());
+        assertEquals("unsafe-method", response.headers().get("X-Retry-Skipped").toString());
     }
 }
