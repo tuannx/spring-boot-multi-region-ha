@@ -27,6 +27,11 @@ public final class ServiceTalkRouterApplication {
         long cooldownMs = getEnvLong("COOLDOWN_MS", getEnvLong("OUTLIER_COOLDOWN_MS", 5000L));
         long requestTimeoutMs = getEnvLong("REQUEST_TIMEOUT_MS", 800L);
         int connectTimeoutMs = getEnvInt("CONNECT_TIMEOUT_MS", 500);
+        long routeTimeoutMs = getEnvLong("ROUTE_TIMEOUT_MS", requestTimeoutMs * 2);
+        long maxEjectionMs = getEnvLong("MAX_EJECTION_MS", RouterPolicy.DEFAULT_MAX_EJECTION.toMillis());
+        int retryBudgetPercent = getEnvInt("RETRY_BUDGET_PERCENT", RouterPolicy.DEFAULT_RETRY_BUDGET_PERCENT);
+        int minRetryConcurrency = getEnvInt("RETRY_MIN_CONCURRENCY", RouterPolicy.DEFAULT_MIN_RETRY_CONCURRENCY);
+        boolean healthCheckEnabled = !"false".equalsIgnoreCase(System.getenv("HEALTH_CHECK_ENABLED"));
         Map<String, String> environment = routerEnvironment(System.getenv());
 
         LOGGER.info("Initializing ServiceTalk Multi-Region Router...");
@@ -36,7 +41,10 @@ public final class ServiceTalkRouterApplication {
             LOGGER.info("  Region {} Endpoint: {}:{}", spec.region(), spec.host(), spec.port());
         }
         LOGGER.info("  Outlier Failure Threshold: {}, Cooldown: {}ms", failureThreshold, cooldownMs);
-        LOGGER.info("  Connect Timeout: {}ms, Request Timeout: {}ms", connectTimeoutMs, requestTimeoutMs);
+        LOGGER.info("  Connect Timeout: {}ms, Per-try Timeout: {}ms, Route Timeout: {}ms",
+                connectTimeoutMs, requestTimeoutMs, routeTimeoutMs);
+        LOGGER.info("  Max Ejection: {}ms, Retry Budget: {}% (min {})",
+                maxEjectionMs, retryBudgetPercent, minRetryConcurrency);
 
         List<StreamingHttpClient> clients = new ArrayList<>();
         List<RegionEndpoint> endpoints = new ArrayList<>();
@@ -48,8 +56,33 @@ public final class ServiceTalkRouterApplication {
             endpoints.add(new RegionEndpoint(spec.region(), spec.host(), spec.port(), spec.priority(), client));
         }
 
-        Duration requestTimeout = Duration.ofMillis(requestTimeoutMs);
-        LocalityPriorityRouter router = new LocalityPriorityRouter(endpoints, failureThreshold, cooldownMs, requestTimeout);
+        RouterPolicy policy = new RouterPolicy(failureThreshold,
+                Duration.ofMillis(cooldownMs),
+                Duration.ofMillis(maxEjectionMs),
+                Duration.ofMillis(requestTimeoutMs),
+                Duration.ofMillis(routeTimeoutMs),
+                retryBudgetPercent,
+                minRetryConcurrency);
+        LocalityPriorityRouter router = new LocalityPriorityRouter(endpoints, policy);
+
+        ActiveHealthChecker healthChecker = null;
+        if (healthCheckEnabled) {
+            ActiveHealthChecker.Config healthConfig = new ActiveHealthChecker.Config(
+                    getEnvString("HEALTH_CHECK_PATH", "/actuator/health"),
+                    Duration.ofMillis(getEnvLong("HEALTH_CHECK_INTERVAL_MS", 1000L)),
+                    Duration.ofMillis(getEnvLong("HEALTH_CHECK_TIMEOUT_MS", 500L)),
+                    getEnvInt("HEALTH_UNHEALTHY_THRESHOLD", 2),
+                    getEnvInt("HEALTH_HEALTHY_THRESHOLD", 2),
+                    Duration.ofMillis(cooldownMs));
+            LOGGER.info("  Active Health Check: {} every {}ms (timeout {}ms, unhealthy {}, healthy {})",
+                    healthConfig.path(), healthConfig.interval().toMillis(), healthConfig.timeout().toMillis(),
+                    healthConfig.unhealthyThreshold(), healthConfig.healthyThreshold());
+            healthChecker = new ActiveHealthChecker(endpoints, healthConfig);
+            healthChecker.start();
+        } else {
+            LOGGER.info("  Active Health Check: disabled");
+        }
+        final ActiveHealthChecker checkerToClose = healthChecker;
 
         HttpServerContext serverContext = HttpServers.forPort(routerPort)
                 .listenStreamingAndAwait((ctx, request, responseFactory) -> router.route(request, responseFactory));
@@ -59,6 +92,9 @@ public final class ServiceTalkRouterApplication {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOGGER.info("Shutting down ServiceTalk Multi-Region Router...");
             try {
+                if (checkerToClose != null) {
+                    checkerToClose.close();
+                }
                 serverContext.closeGracefully();
                 for (StreamingHttpClient client : clients) {
                     client.closeGracefully();
@@ -88,6 +124,11 @@ public final class ServiceTalkRouterApplication {
 
     private static boolean blank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static String getEnvString(String name, String defaultValue) {
+        String val = System.getenv(name);
+        return val == null || val.isBlank() ? defaultValue : val.trim();
     }
 
     private static int getEnvInt(String name, int defaultValue) {
