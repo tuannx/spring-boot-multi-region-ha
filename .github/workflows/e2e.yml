@@ -48,6 +48,7 @@ jobs:
           gradle -p app clean test --no-daemon
           gradle -p cases/cassandra/app clean test --no-daemon
           gradle -p cases/servicetalk-router/app clean test --no-daemon
+          gradle -p cases/xds-control-plane/app clean test --no-daemon
           gradle -p cases/elasticache-global/app clean test --no-daemon
 
       - name: Validate Cassandra case Compose model
@@ -55,6 +56,15 @@ jobs:
 
       - name: Validate ServiceTalk router case Compose model
         run: docker compose -f cases/servicetalk-router/docker-compose.yml config --quiet
+
+      - name: Validate xDS control plane case Compose model
+        run: docker compose -f cases/xds-control-plane/docker-compose.yml config --quiet
+
+      - name: Validate Envoy bootstrap for the xDS case
+        run: |
+          docker run --rm \
+            -v "$PWD/cases/xds-control-plane/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro" \
+            envoyproxy/envoy:v1.39.1 --mode validate -c /etc/envoy/envoy.yaml
 
       - name: Validate ElastiCache Global (Valkey) case Compose model
         run: docker compose -f cases/elasticache-global/docker-compose.yml config --quiet
