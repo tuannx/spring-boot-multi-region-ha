@@ -127,6 +127,7 @@ The system distinguishes two separate message flows with different reliability a
 - **Docker Compose**: Full stack runs locally with Docker
 - **OpenTelemetry + SigNoz**: Optional zero-code Java instrumentation exports traces, metrics, and logs from both regions and the edge router to a self-hosted SigNoz Docker stack
 - **Floci infrastructure profile**: AWS-compatible APIs provision RDS and Amazon MQ resources with real PostgreSQL and RabbitMQ data planes
+- **Spock active-active profile**: Two pgEdge PostgreSQL writers with bidirectional Spock replication and snowflake IDs — no single writer, no fencing; conflicts resolve by rule. Database-layer only; see [docs/spock-active-active.md](docs/spock-active-active.md) for the trade-offs before choosing it
 - **ServiceTalk Locality Router**: Non-blocking edge router with Envoy/ServiceTalk Locality Priority ($P_0 \to P_1$), passive outlier detection, and zero-latency-penalty failover (legacy Nginx available under `legacy-nginx` profile)
 - **Region-aware config**: Typed Pkl defaults plus profile-based regional overrides
 
@@ -294,6 +295,25 @@ keeping the application port inside the container unchanged:
 APP_US_HOST_PORT=18080 ./scripts/observability-up.sh
 APP_US_HOST_PORT=18080 ./scripts/observability-verify.sh
 ```
+
+### 6. Spock active-active profile (optional)
+
+The default stack has one writer on purpose. This profile removes it: both
+PostgreSQL nodes accept writes and replicate to each other with the Spock
+extension, resolving conflicts by rule (`last_update_wins` by default)
+instead of by fencing. It runs the database layer only — the applications
+keep their single-writer schema and are not part of this stack.
+
+```bash
+docker compose -f docker-compose.spock.yml up -d
+./scripts/spock-setup.sh     # extensions, demo table, nodes, subscriptions
+./scripts/spock-verify.sh    # one write per node, then proof of convergence
+```
+
+Read [docs/spock-active-active.md](docs/spock-active-active.md) first: the
+consistency model (eventual, no distributed transactions, unresolvable
+conflict classes that land in `spock.exception_log`) is a different
+contract from the rest of this repository, not a stronger version of it.
 
 ## Observability proof
 

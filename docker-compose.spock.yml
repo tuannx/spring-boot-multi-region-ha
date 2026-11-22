@@ -1,0 +1,116 @@
+# Optional Spock active-active profile: two pgEdge PostgreSQL nodes and NO
+# single global writer. postgres-us and postgres-eu are both writers and
+# replicate bidirectionally with the Spock extension; write conflicts are
+# resolved by rule (default last_update_wins), not by fencing.
+#
+# This is a database-layer option only: the Spring Boot applications are not
+# part of this stack. The app's Flyway schema (fencing trigger, Aurora
+# topology mock, JPA IDENTITY ids) models exactly one writer, so it cannot
+# run against these nodes without an app-side profile. See
+# docs/spock-active-active.md for the env sample and the three blockers.
+#
+#   docker compose -f docker-compose.spock.yml up -d
+#   ./scripts/spock-setup.sh
+#   ./scripts/spock-verify.sh
+services:
+  # ============================================
+  # REGION 1: us-east-1 (writer, snowflake.node=1)
+  # ============================================
+  postgres-us:
+    # pgEdge Enterprise Postgres image: Spock, snowflake and lolor are
+    # pre-installed. Tag convention {pg-major}-spock{spock-major}-{flavor};
+    # pin an immutable tag (e.g. 18.x-spock5.0.x-minimal-N) for repeatability.
+    # Source: https://docs.pgedge.com/container-images/postgres-images/
+    image: ghcr.io/pgedge/pgedge-postgres:18-spock5-minimal
+    container_name: spring-ha-spock-us
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+      TZ: UTC
+    # Spock requirements (docs.pgedge.com/spock-v5/install_spock):
+    # wal_level=logical, track_commit_timestamp=on (last_update_wins compares
+    # commit timestamps), spock in shared_preload_libraries.
+    # output_plugin_libraries is required only on builds that carry the 2026
+    # security-fix parameter; current pgEdge packages do. On an older image
+    # the server refuses to start with this flag - remove that one -c pair.
+    command: >
+      postgres
+      -c shared_preload_libraries=spock
+      -c wal_level=logical
+      -c track_commit_timestamp=on
+      -c max_replication_slots=10
+      -c max_wal_senders=10
+      -c max_worker_processes=10
+      -c output_plugin_libraries=pgoutput,test_decoding,spock_output
+      -c snowflake.node=1
+    ports:
+      - "${SPOCK_US_HOST_PORT:-5452}:5432"
+    volumes:
+      # The pgEdge image keeps PGDATA in a major-version subdirectory of
+      # /var/lib/pgsql; mount the parent, as with the default stack.
+      - spock-us-data:/var/lib/pgsql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      spock-net:
+        aliases:
+          - postgres-us.local
+
+  # ============================================
+  # REGION 2: eu-west-1 (writer, snowflake.node=2)
+  # ============================================
+  postgres-eu:
+    image: ghcr.io/pgedge/pgedge-postgres:18-spock5-minimal
+    container_name: spring-ha-spock-eu
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+      TZ: UTC
+    command: >
+      postgres
+      -c shared_preload_libraries=spock
+      -c wal_level=logical
+      -c track_commit_timestamp=on
+      -c max_replication_slots=10
+      -c max_wal_senders=10
+      -c max_worker_processes=10
+      -c output_plugin_libraries=pgoutput,test_decoding,spock_output
+      -c snowflake.node=2
+    ports:
+      - "${SPOCK_EU_HOST_PORT:-5453}:5432"
+    volumes:
+      - spock-eu-data:/var/lib/pgsql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      spock-net:
+        aliases:
+          - postgres-eu.local
+
+  # psql client for ad-hoc checks; the setup/verify scripts use the psql
+  # inside the database containers instead.
+  db-tools:
+    image: postgres:18.6-alpine
+    container_name: spring-ha-spock-db-tools
+    entrypoint:
+      - /bin/sh
+      - -c
+      - trap 'exit 0' TERM INT; while :; do sleep 3600; done
+    networks:
+      - spock-net
+
+volumes:
+  spock-us-data:
+  spock-eu-data:
+
+networks:
+  spock-net:
+    name: spring-ha-spock
